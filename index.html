@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>永駿業務系統</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+:root{
+  --bg:#EEF1F4; --surface:#FFFFFF; --surface2:#E6EAEF; --fg:#1C2733; --muted:#5B6878; --line:#D3D9E0;
+  --ink:#1C2733; --accent:#B4611A; --accent-soft:#F6E7D8; --ok:#2E7D4F; --ok-soft:#DFF0E5; --warn:#B3261E; --warn-soft:#F8E1DF;
+  --pri:#1F4E79; --heat1:#FBE3E1; --heat2:#F4B8B3; --heat3:#D9534F; --hl:#FFF4C2; --line-green:#06C755;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141A21; --surface:#1C242D; --surface2:#252F3A; --fg:#E7ECF1; --muted:#9AA7B5; --line:#2C3642;
+  --ink:#C9D6E6; --accent:#E08A3C; --accent-soft:#3A2A18; --ok:#5CB880; --ok-soft:#173025; --warn:#F07167; --warn-soft:#3A1E1C;
+  --pri:#3D7AB8; --heat1:#3A1F21; --heat2:#5C2427; --heat3:#A8302C; --hl:#3A3414; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;font-size:15px;line-height:1.55;
+  padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 90px max(14px,env(safe-area-inset-left))}
+.wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1,h2,h3{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:13px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.top h1{font-size:19px} .top .who{font-size:13px;color:var(--muted)}
+.pages{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.pages button{border:0;background:none;padding:10px 12px;font-weight:700;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap;font-size:15px}
+.pages button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--pri)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+.sec{display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.label{font-size:12px;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.notice{border-radius:8px;padding:8px 12px;font-size:13px;display:flex;flex-direction:column;gap:2px}
+.notice.secret{background:var(--warn-soft);color:var(--warn);font-weight:700}
+.notice.rule{background:var(--surface2);color:var(--muted)}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 12px;border-radius:8px;font-weight:700;font-size:13px;white-space:nowrap}
+.btn.pri{background:var(--pri);color:#fff;border-color:var(--pri)}
+.btn.acc{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.danger{color:var(--warn);border-color:var(--warn)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
+.pill.active{background:var(--accent-soft);color:var(--accent)} .pill.ready{background:var(--ok-soft);color:var(--ok)}
+.pill.stale{background:var(--warn-soft);color:var(--warn)} .pill.done{background:var(--surface2);color:var(--muted)}
+.need{color:var(--accent);font-weight:700;font-size:12px}
+input[type=text],input[type=date],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+textarea{width:100%;min-height:70px}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;color:var(--muted);font-weight:700}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media (max-width:700px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.kpi .n{font-family:var(--f-mono);font-size:26px;font-weight:700;line-height:1.2}
+.kpi.ok .n{color:var(--ok)}
+/* stock */
+.stock table{min-width:1250px;font-size:13.5px}
+.stock td,.stock th{white-space:nowrap;padding:7px 6px}
+.stock td.num{text-align:right;font-family:var(--f-mono)}
+.stock tr.h1 td{background:var(--heat1)} .stock tr.h2 td{background:var(--heat2)} .stock tr.h3 td{background:var(--heat3);color:#fff}
+.stock tr.h3 .pill{background:rgba(255,255,255,.25);color:#fff} .stock tr.h3 .btn:not(.acc){color:var(--fg)}
+.stock tr.sold td{color:var(--muted)}
+.stock th.pin,.stock td.pin{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:6px 0 8px -6px rgba(0,0,0,.25)}
+.stock tr.h1 td.pin{background:var(--heat1)} .stock tr.h2 td.pin{background:var(--heat2)} .stock tr.h3 td.pin{background:var(--heat3)}
+.stock th:last-child,.stock td:last-child{position:sticky;right:0;background:var(--surface);box-shadow:-6px 0 8px -6px rgba(0,0,0,.25)}
+.stock tr.h1 td:last-child{background:var(--heat1)} .stock tr.h2 td:last-child{background:var(--heat2)} .stock tr.h3 td:last-child{background:var(--heat3)}
+@media (max-width:700px){.stock th:last-child,.stock td:last-child{position:static;box-shadow:none}}
+.wm{position:fixed;inset:0;pointer-events:none;z-index:5}
+/* count */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:8px 12px;font-weight:700;font-size:13px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"].in{background:var(--ok);color:#fff}
+.seg button[aria-pressed="true"].out{background:var(--accent);color:#fff}
+.seg button[aria-pressed="true"].miss{background:var(--warn);color:#fff}
+.cnt-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px 10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.cnt-row:first-child{border-top:0}
+.cnt-row .no{font-family:var(--f-mono);color:var(--muted);text-align:right}
+.cnt-row .ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.cnt-row .extra{grid-column:2/-1;display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:640px){.cnt-row{grid-template-columns:24px minmax(0,1fr)}.cnt-row .ctl{grid-column:2/-1;justify-content:flex-start}}
+.sticky-bar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom));z-index:6;display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 14px}
+.hist table{min-width:860px;font-size:13px}
+.hist td,.hist th{padding:6px;white-space:nowrap;text-align:center}
+.hist td.l,.hist th.l{text-align:left}
+.hist th.pin,.hist td.pin{position:sticky;left:0;z-index:1;background:var(--surface);text-align:left;box-shadow:6px 0 8px -6px rgba(0,0,0,.25)}
+.hist .ok{color:var(--ok);font-weight:700} .hist .o{color:var(--accent);font-weight:700} .hist .x{color:var(--warn);font-weight:700}
+.hist th.nc{color:var(--warn)}
+/* board */
+.board table{min-width:720px}
+.board th,.board td{text-align:center;border:1px solid var(--line);padding:8px 6px}
+.board th.g1{background:var(--ok-soft)} .board th.g2{background:var(--surface2)} .board th.g3{background:var(--accent-soft)}
+.board td.name{font-weight:700;text-align:left}
+.board td.act{font-family:var(--f-mono);font-size:20px;font-weight:700}
+.board td.act.zero{background:var(--hl)} .board td.act.hit{color:var(--ok)}
+.board td.tgt,.board td.yr{font-family:var(--f-mono);color:var(--muted)}
+.board tr.total td{font-weight:700;background:var(--surface2)}
+.lists{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:700px){.lists{grid-template-columns:1fr}}
+.lists h4{margin:0 0 4px;font-size:14px} .lists .who-h{font-weight:700;font-size:13px;margin-top:6px} .lists .car{font-family:var(--f-mono);font-size:13px}
+.push{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;font-size:13px;padding:8px 10px;border-radius:10px;background:var(--surface2)}
+.push .ic{width:26px;height:26px;border-radius:7px;background:var(--line-green);color:#fff;display:grid;place-items:center;font-weight:900;font-size:10px}
+/* forms / modal */
+.form2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form2 label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:700}
+.form2 input,.form2 select{font-weight:400;color:var(--fg);width:100%}
+.form2 .full{grid-column:1/-1}
+@media (max-width:420px){.form2{grid-template-columns:1fr}}
+.calc{background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px}
+.modal{position:fixed;inset:0;background:rgba(10,14,22,.55);display:grid;place-items:center;z-index:25;padding:16px}
+.modal .box{background:var(--surface);border-radius:14px;padding:18px;width:460px;max-width:100%;display:flex;flex-direction:column;gap:12px;max-height:88vh;overflow:auto}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:700;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.loading{padding:40px 0;text-align:center;color:var(--muted)}
+.log{display:flex;flex-direction:column;gap:6px;font-size:13px}
+.log div{display:grid;grid-template-columns:56px 1fr;gap:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1>永駿車業 業務系統</h1><div class="who" id="who">連線中…</div></div>
+    <button class="btn" id="reload" data-reload>重新整理</button>
+  </header>
+  <nav class="pages" role="tablist" id="nav" hidden>
+    <button role="tab" data-page="stock">車源表</button>
+    <button role="tab" data-page="count">每日點車</button>
+    <button role="tab" data-page="visits">來客紀錄</button>
+    <button role="tab" data-page="board">分點表</button>
+    <button role="tab" data-page="bonus" id="nav-bonus" hidden>獎金結算</button>
+  </nav>
+  <main id="view"><div class="loading">讀取資料中…</div></main>
+</div>
+<div id="wm" class="wm" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<div id="modal" class="modal" hidden><div class="box" id="mbox" role="dialog" aria-modal="true"></div></div>
+
+<script>
+// ===== 設定 =====
+const LIFF_ID = '2012275132-8PYWlQ0K';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzsewthHYW4Dpz-D-pr4xrmqwK5wKo22B1lEUzReJsa9mzLlutbI5k4sYspnoygb6OIxg/exec';
+const START = '2026/11/01';   // 系統上線日：之前的年度數字放在試算表「年度基準」
+const BONUS = { saleRate: .3, buyRate: .2, buyBaseLow: 1000, buyBaseHigh: 3000, buyThreshold: 500000 };
+
+// ===== 基本工具 =====
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = n => (n === '' || n == null || isNaN(n)) ? '' : Number(n).toLocaleString('en-US');
+const N = v => (v === '' || v == null) ? null : Number(v);
+const pd = s => { const [y, m, d] = s.split('/').map(Number); return new Date(y, m - 1, d); };
+const fmtD = d => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+const addD = (s, n) => fmtD(new Date(pd(s).getTime() + n * 864e5));
+const diffD = (a, b) => Math.round((pd(b) - pd(a)) / 864e5);
+const md = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : '—';
+const ym = s => s.slice(0, 7);
+const isoIn = s => s.replace(/\//g, '-');          // yyyy/MM/dd → input[type=date]
+const isoOut = s => (s || '').replace(/-/g, '/');
+function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => t.hidden = true, 3200); }
+function openModal(html) { $('#mbox').innerHTML = html; $('#modal').hidden = false; }
+function closeModal() { $('#modal').hidden = true; pendingTrade = null; }
+
+async function api(payload) {
+  const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ idToken: liff.getIDToken() }, payload)) });
+  const j = await res.json();
+  if (j.authError) { toast(j.message); setTimeout(() => liff.login(), 1500); }
+  return j;
+}
+async function act(payload, busyBtn) {
+  if (busyBtn) { busyBtn.disabled = true; busyBtn.dataset.t = busyBtn.textContent; busyBtn.textContent = '處理中…'; }
+  try {
+    const r = await api(payload);
+    toast(r.message || (r.ok ? '完成' : '失敗'));
+    if (r.ok) { closeModal(); await load(); }
+    return r;
+  } catch (e) { toast('連線失敗，請再試一次'); }
+  finally { if (busyBtn && document.body.contains(busyBtn)) { busyBtn.disabled = false; busyBtn.textContent = busyBtn.dataset.t; } }
+}
+
+// ===== 資料 =====
+let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {};
+let page = 'stock', stockFilter = '庫存中', stockQ = '', boardMonth = '', bonusMonth = '', visQ = '', histDays = 10, draft = null, pendingTrade = null;
+const isBoss = () => D && D.me.isBoss;
+const SALES = () => D.salesNames;
+const ROWS = () => ['公司車', ...SALES()];
+const rowOf = name => SALES().includes(name) ? name : '公司車';
+
+function normalize() {
+  CARS = D.cars.map(c => ({ id: c['編號'], inDate: c['進貨日'], plate: c['車牌'], brand: c['廠牌'], model: c['車型'], year: c['年份'],
+    color: c['顏色'], km: c['里程'], cert: c['認證'], fc: c['廠證'], keys: c['鑰匙'], ask: N(c['開價']), floor: N(c['底價']),
+    bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), official: c['類別'] === '公務車', note: c['備註'] }));
+  ORDERS = D.orders.map(o => ({ id: o['編號'], carId: o['車輛編號'], plate: o['車牌'], label: o['車款'], seller: o['收訂業務'], date: o['收訂日'],
+    cust: o['客戶'], price: N(o['成交價']), eta: o['預計交車日'], status: o['狀態'], delivered: o['交車日'],
+    fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'] }));
+  VISITS = D.visits.map(v => ({ id: v['編號'], date: v['日期'], cust: v['客戶'], type: v['來源'], sales: v['接待業務'], purposes: (v['來意'] || '').split('＋').filter(Boolean),
+    carIds: (v['看車編號'] || '').split(',').filter(Boolean), trade: v['估車車款'] ? { car: v['估車車款'], year: v['估車年份'], km: v['估車里程'], ask: N(v['期望價']) } : null,
+    tradeStatus: v['估車狀態'], note: v['備註'] }));
+  CHECKS = {};
+  D.checks.forEach(c => { (CHECKS[c['日期']] = CHECKS[c['日期']] || { by: c['點車人'], time: c['時間'], items: {} }).items[c['車輛編號']] = { s: c['狀態'], reason: c['原因'], note: c['備註'] }; });
+  if (!boardMonth) boardMonth = ym(D.today);
+  if (!bonusMonth) bonusMonth = ym(D.today);
+  draft = null;
+}
+const orderOf = c => ORDERS.find(o => o.carId === c.id && o.status !== '已退訂');
+const status = c => c.official ? '公務車' : (orderOf(c)?.status || '在庫');
+const inLot = c => ['在庫', '已收訂', '公務車'].includes(status(c));
+const carById = id => CARS.find(c => c.id === id);
+const label = c => `${String(c.year).slice(0, 4)} ${c.model}`;
+const belong = c => c.official ? '公務車' : c.buyer === '寄賣' ? '寄賣' : '文中';
+function stockDays(c) { const o = orderOf(c); const end = o && o.delivered ? o.delivered : D.today; return diffD(c.inDate, end); }
+const visitsOf = c => VISITS.filter(v => v.carIds.includes(c.id));
+function lastCheck(c) { for (const d of Object.keys(CHECKS).sort().reverse()) { const it = CHECKS[d].items[c.id]; if (it) return { d, ...it }; } return null; }
+
+async function load() {
+  const r = await api({ action: 'all' });
+  if (!r.ok) { $('#view').innerHTML = `<div class="panel">${esc(r.message)}</div>`; $('#who').textContent = ''; return; }
+  D = r; normalize();
+  $('#who').textContent = `${D.me.name}${D.me.en !== D.me.name ? '（' + D.me.en + '）' : ''}・${D.me.isBoss ? '主管' : '業務'}・${D.today}`;
+  $('#nav').hidden = false; $('#nav-bonus').hidden = !isBoss();
+  render();
+}
+
+// ===== 車源表 =====
+function renderStock() {
+  const counts = { 在庫: 0, 已收訂: 0, 已交車: 0, 公務車: 0 }; CARS.forEach(c => counts[status(c)]++);
+  counts['庫存中'] = counts['在庫'] + counts['已收訂'];
+  let list = CARS.filter(c => stockFilter === '全部' || (stockFilter === '庫存中' ? ['在庫', '已收訂'].includes(status(c)) : status(c) === stockFilter));
+  if (stockQ) { const q = stockQ.toLowerCase(); list = list.filter(c => [c.plate, c.brand, c.model, c.color, c.manager, c.buyer].join(' ').toLowerCase().includes(q)); }
+  list.sort((a, b) => a.inDate.localeCompare(b.inDate));
+  const need = CARS.filter(c => c.floor == null && !c.official && status(c) === '在庫');
+  return `
+  <div class="notice secret">［此為公司機密，僅限員工查看，外流需自負法律責任］</div>
+  <div class="notice rule"><span>贈送客戶之保養、配件等項目，應事先回報公司核准。</span>
+    <span>採購業務：50萬元以下－保底$1,000＋底價之上採購獎金20%；50萬元以上－保底$3,000＋底價之上採購獎金20%</span>
+    <span>銷售業務：保底獎金＋底價之上30%　※成交金額低於底價者，保底獎金將視情況調整</span></div>
+  <section class="row" style="justify-content:space-between">
+    <div class="filters">${[['庫存中', '庫存中'], ['在庫', '可收訂'], ['已收訂', '已收訂'], ['已交車', '已交車'], ['公務車', '公務車'], ['全部', '全部']].map(([f, l]) =>
+      `<button class="chip" data-sf="${f}" aria-pressed="${stockFilter === f}">${l}${f !== '全部' ? ' ' + counts[f] : ''}</button>`).join('')}</div>
+    <div class="row"><input type="text" id="sq" placeholder="搜尋車牌、車型、業務" value="${esc(stockQ)}" aria-label="搜尋" style="width:170px">
+      <button class="btn" data-visit="">＋來客</button><button class="btn acc" data-act="buy">＋新增採購</button></div>
+  </section>
+  ${isBoss() && need.length ? `<div class="panel" style="border-color:var(--accent)"><b>${need.length} 台車等你定價與指派：</b>${need.map(c => `${esc(label(c))}（${c.plate}）`).join('、')}</div>` : ''}
+  <section class="panel stock" style="padding:0"><div class="tbl-wrap"><table>
+    <thead><tr><th>進貨日</th><th>庫存天</th><th>看車</th><th>車牌</th><th>廠牌</th><th class="pin">車型</th><th>年份</th><th>顏色</th><th>里程</th><th>認證</th><th>廠證</th><th>鑰匙</th>
+      <th style="text-align:right">開價</th><th style="text-align:right">底價</th><th style="text-align:right">保底獎金</th><th>採購</th><th>管理</th><th>狀態</th><th></th></tr></thead>
+    <tbody>${list.map(c => {
+      const st = status(c), d = stockDays(c), o = orderOf(c), priced = c.floor != null, vc = visitsOf(c).length;
+      const heat = st === '已交車' || st === '公務車' ? 'sold' : st === '已收訂' ? '' : d >= 180 ? 'h3' : d >= 120 ? 'h2' : d >= 90 ? 'h1' : '';
+      const lc = lastCheck(c), out = lc && lc.s !== '在店' && inLot(c) ? `<span class="pill stale">${lc.s === '外出' ? '外出・' + esc(lc.reason) : '找不到'}</span> ` : '';
+      return `<tr class="${heat}">
+        <td class="mono">${c.inDate.slice(2)}</td><td class="mono" style="text-align:right;font-weight:700">${d}</td>
+        <td>${vc ? `<button class="chip" data-vlist="${c.id}">${vc} 組</button>` : '<span class="muted">—</span>'}</td>
+        <td class="mono"><b>${esc(c.plate)}</b></td><td>${esc(c.brand)}</td><td class="pin"><b>${esc(c.model)}</b></td><td class="mono">${esc(c.year)}</td><td>${esc(c.color)}</td>
+        <td>${esc(c.km)}</td><td>${esc(c.cert)}</td><td>${esc(c.fc)}</td><td>${esc(c.keys)}</td>
+        <td class="num">${c.official ? '—' : priced ? money(c.ask) : '<span class="need">待主管填</span>'}</td><td class="num">${priced ? money(c.floor) : ''}</td><td class="num">${priced ? money(c.bonus) : ''}</td>
+        <td>${esc(c.buyer)}</td><td>${c.official ? '—' : esc(c.manager) || '<span class="need">未指派</span>'}</td>
+        <td>${out}${st === '公務車' ? '<span class="pill done">公務車</span>' : st === '在庫' ? '<span class="pill done">在庫</span>' : st === '已收訂' ? `<span class="pill active">${esc(o.seller)} 已收訂</span>` : `<span class="pill ready">${esc(o.seller)} 已交車</span>`}</td>
+        <td><div class="row" style="gap:6px;flex-wrap:nowrap">
+          ${isBoss() ? `<button class="btn" data-edit="${c.id}">${priced || c.official ? '修改' : '定價'}</button>` : ''}
+          ${st === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button><button class="btn acc" data-order="${c.id}" ${priced ? '' : 'disabled'}>收訂</button>`
+            : st === '已收訂' ? `<button class="btn pri" data-ord="${o.id}">交車／退訂</button>` : ''}
+        </div></td></tr>`;
+    }).join('') || '<tr><td colspan="19" class="muted">沒有符合的車輛</td></tr>'}</tbody>
+  </table></div></section>
+  <p class="small muted" style="margin:0">已收訂的車仍留在庫存表，完成交車後才移出。庫存天數算到交車為止；可收訂的車超過 90 天淡紅、120 天紅、180 天深紅。往右滑時「車型」固定在左邊。</p>`;
+}
+
+function carForm(c, opt = {}) {
+  const boss = isBoss(), edit = !!c;
+  c = c || { inDate: D.today, plate: '', brand: '', model: '', year: '', color: '', km: '', cert: 'TSI', fc: 'V', keys: '2', ask: null, floor: null, bonus: null, buyer: '公司', manager: '', cost: null, official: false, note: '' };
+  if (opt.trade) Object.assign(c, opt.trade);
+  const sel = (id, opts, v) => `<select id="${id}">${opts.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  return `<h3>${edit ? (c.floor == null && !c.official ? '定價與指派' : '修改車輛') + '・' + esc(label(c)) : '新增採購車輛'}</h3>
+  <form id="cf" class="form2" data-id="${edit ? c.id : ''}">
+    <label>入庫日<input type="date" id="f-in" value="${isoIn(c.inDate)}" required></label>
+    <label>車牌<input type="text" id="f-plate" value="${esc(c.plate)}" placeholder="ABC-1234" required></label>
+    <label>廠牌<input type="text" id="f-brand" value="${esc(c.brand)}" placeholder="TOYOTA"></label>
+    <label>車型<input type="text" id="f-model" value="${esc(c.model)}" placeholder="RAV4" required></label>
+    <label>年份（年.月）<input type="text" id="f-year" value="${esc(c.year)}" placeholder="2019.06" required></label>
+    <label>顏色<input type="text" id="f-color" value="${esc(c.color)}"></label>
+    <label>里程<input type="text" id="f-km" value="${esc(c.km)}" placeholder="6.5萬"></label>
+    <label>認證${sel('f-cert', ['TSI', 'GOO', '需複檢', '–'], c.cert)}</label>
+    <label>廠證${sel('f-fc', ['V', '–'], c.fc)}</label>
+    <label>鑰匙${sel('f-keys', ['2', '1', '–'], c.keys)}</label>
+    <label>採購${boss ? sel('f-buyer', ['公司', '寄賣', ...SALES()], c.buyer) : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
+    <label>採購金額${boss || !edit ? `<input type="number" id="f-cost" value="${c.cost ?? ''}" placeholder="例如 520000">` : ''}</label>
+    ${boss && edit ? `
+    <label>開價<input type="number" id="f-ask" value="${c.ask ?? ''}"></label>
+    <label>底價<input type="number" id="f-floor" value="${c.floor ?? ''}"></label>
+    <label>保底獎金<input type="number" id="f-bonus" value="${c.bonus ?? ''}"></label>
+    <label>管理人${sel('f-mgr', ['', ...SALES(), '公司'], c.manager)}</label>` : ''}
+    ${boss ? `<label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="f-official" ${c.official ? 'checked' : ''}> 公務車（不出售，只列入每日點車）</label>` : ''}
+    <label class="full">備註<input type="text" id="f-note" value="${esc(c.note)}"></label>
+    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並推播給全體員工。</p>` : ''}
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存' : '送出入庫'}</button></div>
+  </form>`;
+}
+
+function calcBonus(c, price, sellerIsCompany) {
+  const diff = price - c.floor;
+  const buyer = SALES().includes(c.buyer) ? c.buyer : null;
+  const sale = sellerIsCompany ? 0 : diff < 0 ? null : Math.round(c.bonus + diff * BONUS.saleRate);
+  const buy = !buyer || diff < 0 ? 0 : Math.round(((c.cost || 0) >= BONUS.buyThreshold ? BONUS.buyBaseHigh : BONUS.buyBaseLow) + diff * BONUS.buyRate);
+  return { diff, sale, buy, buyer, below: diff < 0 };
+}
+function orderForm(c) {
+  const seen = [...new Set(visitsOf(c).map(v => v.cust))];
+  return `<h3>收訂・${esc(label(c))}（${esc(c.plate)}）</h3>
+  <div class="calc">開價 <b class="mono">${money(c.ask)}</b>・底價 <b class="mono">${money(c.floor)}</b>・保底獎金 <b class="mono">${money(c.bonus)}</b>・管理 ${esc(c.manager || '—')}</div>
+  <form id="of" class="form2" data-id="${c.id}">
+    <label>收訂業務${isBoss() ? `<select id="o-sales"><option value="">${esc(D.me.name)}（公司車）</option>${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
+    <label>收訂日<input type="date" id="o-date" value="${isoIn(D.today)}" required></label>
+    <label>客戶稱呼<input type="text" id="o-cust" list="o-vlist" placeholder="王先生" required><datalist id="o-vlist">${seen.map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+    <label>成交價<input type="number" id="o-price" value="${c.ask}" required></label>
+    <label>預計交車日<input type="date" id="o-eta" value="${isoIn(addD(D.today, 10))}"></label>
+    <label>&nbsp;</label>
+    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並推播給全體員工。</p>'}
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">確認收訂</button></div>
+  </form>`;
+}
+function updCalc(c) {
+  const el = $('#o-calc'); if (!el) return;
+  const comp = $('#o-sales') && $('#o-sales').value === '';
+  const r = calcBonus(c, +$('#o-price').value || 0, comp);
+  el.innerHTML = '只有主管看得到：' + (r.below ? `成交價低於底價 <b class="mono">${money(-r.diff)}</b>，銷售獎金待斟酌${r.buyer ? `；${r.buyer} 沒有採購獎金` : ''}`
+    : `${comp ? '公司車沒有銷售獎金' : `銷售獎金 <b class="mono">${money(r.sale)}</b>`}${r.buyer ? `；採購獎金（${r.buyer}）<b class="mono">${money(r.buy)}</b>` : ''}`);
+}
+function orderModal(o) {
+  const c = carById(o.carId), can = isBoss() || o.seller === D.me.en;
+  return `<h3>${esc(label(c))}（${esc(c.plate)}）</h3>
+  <div class="log"><div><span class="muted">收訂</span><span>${esc(o.seller)}・${o.date}</span></div><div><span class="muted">客戶</span><span>${esc(o.cust)}</span></div>
+  ${o.price != null ? `<div><span class="muted">成交價</span><span class="mono">${money(o.price)}</span></div>` : ''}<div><span class="muted">預計交車</span><span>${o.eta || '—'}</span></div></div>
+  ${can ? `<form id="dlv" data-id="${o.id}" class="row" style="background:var(--ok-soft);border-radius:8px;padding:10px">
+      <label class="label" for="d-date">實際交車日</label><input type="date" id="d-date" value="${isoIn(D.today)}" required>
+      <button class="btn pri" type="submit">完成交車</button></form>
+    <p class="small muted" style="margin:0">完成交車：從庫存表移出，分點表交車 +1（不推播），列入交車月份的獎金結算。</p>
+    <div class="row" style="justify-content:space-between"><button class="btn danger" data-cancel="${o.id}">退訂</button><button class="btn" data-mclose>關閉</button></div>`
+    : '<p class="small muted">只有收訂業務或主管可以交車或退訂。</p><div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button></div>'}`;
+}
+
+// ===== 每日點車 =====
+function startDraft() {
+  const today = D.today;
+  draft = {};
+  CARS.filter(inLot).forEach(c => {
+    const t = CHECKS[today]?.items[c.id];
+    if (t) { draft[c.id] = { s: t.s, reason: t.reason, note: t.note }; return; }
+    let prev = null; for (const d of Object.keys(CHECKS).sort().reverse()) { if (d < today && CHECKS[d].items[c.id]) { prev = CHECKS[d].items[c.id]; break; } }
+    draft[c.id] = prev && prev.s === '外出' ? { s: '外出', reason: prev.reason, note: prev.note } : { s: '在店', reason: '', note: '' };
+  });
+}
+function outStreak(c) { let n = 0, r = ''; for (const d of Object.keys(CHECKS).sort().reverse()) { if (d >= D.today) continue; const it = CHECKS[d].items[c.id]; if (!it) continue; if (it.s === '外出') { n++; r = r || it.reason; } else break; } return { n, r }; }
+function renderCount() {
+  if (!draft) startDraft();
+  const today = D.today, done = CHECKS[today];
+  const cars = CARS.filter(inLot).sort((a, b) => a.inDate.localeCompare(b.inDate));
+  const n = { 在店: 0, 外出: 0, 找不到: 0 }; cars.forEach(c => n[draft[c.id].s]++);
+  const days = []; for (let i = histDays - 1; i >= 0; i--) days.push(addD(today, -i));
+  const can = D.me.isSales || isBoss();
+  return `
+  <section class="row" style="justify-content:space-between">
+    <div><h2 style="font-size:18px">文中店 每日點車</h2><div class="small muted">值班業務下班前確認每台車是否在店</div></div>
+    <div class="small">${done ? `<span class="pill ready">今日已點車</span> ${esc(done.by)}・${done.time.slice(0, 5)}` : '<span class="pill stale">今天還沒點車</span>'}</div>
+  </section>
+  <section class="panel small">今日值班業務：<b>${D.duty.length ? D.duty.map(d => `${d.name}（${d.code}）`).join('、') : '沒有（漏點會提醒主管）'}</b>
+    <span class="muted">・到 ${D.closeTime} 還沒點車，系統才會用 LINE 提醒</span></section>
+  <section class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:4px"><h3 style="font-size:16px">${md(today)} 點車・共 ${cars.length} 台</h3>
+      ${can ? '<button class="btn" data-allin>全部設為在店</button>' : ''}</div>
+    <div>${cars.map((c, i) => {
+      const d = draft[c.id], st = outStreak(c), o = orderOf(c);
+      return `<div class="cnt-row"><span class="no">${i + 1}</span>
+        <div style="min-width:0"><b>${esc(c.year)} ${esc(c.model)}</b> <span class="mono">${esc(c.plate)}</span> <span class="small muted">${esc(c.color)}・${belong(c)}</span>
+          <div class="small row" style="gap:6px;margin-top:2px">${o ? `<span class="pill active">${esc(o.seller)} 已收訂</span>` : ''}${d.s === '外出' && st.n ? `<span class="pill stale">外出第 ${st.n + 1} 天・${esc(st.r)}</span>` : ''}</div></div>
+        <div class="ctl">${can ? `<div class="seg" role="group" aria-label="${esc(c.plate)}">
+          <button class="in" data-cs="${c.id}|在店" aria-pressed="${d.s === '在店'}">在店</button>
+          <button class="out" data-cs="${c.id}|外出" aria-pressed="${d.s === '外出'}">外出</button>
+          <button class="miss" data-cs="${c.id}|找不到" aria-pressed="${d.s === '找不到'}">找不到</button></div>` : `<span class="small">${d.s}</span>`}
+          ${status(c) === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button>` : ''}</div>
+        ${d.s === '外出' && can ? `<div class="extra"><select data-cr="${c.id}" aria-label="外出原因">${D.outReasons.map(r => `<option ${d.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+          <input type="text" data-cn="${c.id}" value="${esc(d.note || '')}" placeholder="地點／預計回店（選填）" style="flex:1;min-width:150px" aria-label="外出備註"></div>` : ''}
+        ${d.s === '找不到' ? '<div class="extra small" style="color:var(--warn)">送出後會立即通知主管</div>' : ''}
+      </div>`;
+    }).join('')}</div>
+  </section>
+  ${can ? `<div class="sticky-bar"><span class="small">在店 <b>${n['在店']}</b>・外出 <b>${n['外出']}</b>・找不到 <b>${n['找不到']}</b></span><button class="btn acc" data-csubmit>${done ? '更新點車' : '送出點車'}</button></div>` : ''}
+  <section class="panel sec hist">
+    <div class="row" style="justify-content:space-between"><h3 style="font-size:16px">點車紀錄</h3>
+      <div class="filters">${[10, 30].map(x => `<button class="chip" data-hd="${x}" aria-pressed="${histDays === x}">近 ${x} 天</button>`).join('')}</div></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th class="l">序</th><th class="l">入庫</th><th class="l">年份</th><th class="pin">車型</th><th class="l">車牌</th><th class="l">顏色</th><th class="l">歸屬</th>
+        ${days.map(d => `<th class="${CHECKS[d] ? '' : 'nc'}">${md(d)}<div class="small" style="font-weight:400">${CHECKS[d] ? esc(CHECKS[d].by) : '未點'}</div></th>`).join('')}</tr></thead>
+      <tbody>${CARS.filter(c => inLot(c) || days.some(d => CHECKS[d]?.items[c.id])).sort((a, b) => a.inDate.localeCompare(b.inDate)).map((c, i) => `<tr>
+        <td class="l mono">${i + 1}</td><td class="l mono">${c.inDate}</td><td class="l mono">${esc(c.year)}</td><td class="pin"><b>${esc(c.model)}</b></td><td class="l mono">${esc(c.plate)}</td><td class="l">${esc(c.color)}</td><td class="l">${belong(c)}</td>
+        ${days.map(d => { const it = CHECKS[d]?.items[c.id]; return `<td>${!it ? '<span class="muted">·</span>' : it.s === '在店' ? '<span class="ok">✓</span>' : it.s === '外出' ? `<span class="o" title="${esc(it.note)}">${esc(it.reason)}</span>` : '<span class="x">找不到</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <p class="small muted" style="margin:0">✓ 在店・橘字為外出原因・「未點」表示那天沒有人點車。往右滑時「車型」固定在左邊。</p>
+  </section>`;
+}
+
+// ===== 來客紀錄 =====
+function visitForm(pre) {
+  const stock = CARS.filter(c => status(c) === '在庫');
+  const trade = pre === 'trade';
+  return `<h3>登記來店客人</h3>
+  <form id="vf" class="form2">
+    <label>日期<input type="date" id="c-date" value="${isoIn(D.today)}" required></label>
+    <label>接待業務${isBoss() ? `<select id="c-sales"><option value="">${esc(D.me.name)}</option>${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
+    <label>客戶稱呼<input type="text" id="c-cust" placeholder="陳先生" required></label>
+    <label>來源<select id="c-type">${D.sources.map(x => `<option>${x}</option>`).join('')}</select></label>
+    <div class="full"><div class="label" style="margin-bottom:6px">來意（可複選）</div>
+      <div class="row small"><label class="row" style="gap:6px"><input type="checkbox" id="c-p-see" ${trade ? '' : 'checked'}> 看車</label>
+      <label class="row" style="gap:6px"><input type="checkbox" id="c-p-trade" ${trade ? 'checked' : ''}> 估車（客人要賣車／換車）</label></div></div>
+    <div class="full" id="c-see-box" ${trade ? 'hidden' : ''}><div class="label" style="margin-bottom:6px">看了哪些車（可複選）</div>
+      <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:4px">
+      ${stock.map(c => `<label class="row small" style="gap:6px"><input type="checkbox" name="c-car" value="${c.id}" ${c.id === pre ? 'checked' : ''}> ${esc(label(c))} <span class="mono muted">${esc(c.plate)}</span></label>`).join('')}</div></div>
+    <div class="full form2" id="c-trade-box" ${trade ? '' : 'hidden'} style="background:var(--surface2);border-radius:8px;padding:10px">
+      <label>客人的車（廠牌 車型）<input type="text" id="t-car" placeholder="TOYOTA WISH"></label>
+      <label>年份<input type="text" id="t-year" placeholder="2015"></label>
+      <label>里程<input type="text" id="t-km" placeholder="12萬"></label>
+      <label>客人期望價<input type="number" id="t-ask" placeholder="250000"></label></div>
+    <label class="full">需求／備註<input type="text" id="c-note" placeholder="預算、用途、下次聯絡時間"></label>
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">登記</button></div>
+  </form>`;
+}
+function carVisits(c) {
+  const list = visitsOf(c).sort((a, b) => b.date.localeCompare(a.date)), by = {};
+  list.forEach(x => by[x.sales] = (by[x.sales] || 0) + 1);
+  return `<h3>${esc(label(c))}（${esc(c.plate)}）看過的客人</h3>
+  <div class="small muted">共 ${list.length} 組・${Object.entries(by).map(([k, n]) => `${esc(k)} ${n} 組`).join('、')}</div>
+  <div class="log">${list.map(x => `<div><span class="mono muted">${md(x.date)}</span><span><b>${esc(x.cust)}</b>・${esc(x.sales)} 的客人・${esc(x.type)}${x.trade ? '・也要估車' : ''}${x.note ? `<br><span class="muted">${esc(x.note)}</span>` : ''}</span></div>`).join('')}</div>
+  <div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button></div>`;
+}
+const tradeTxt = t => `${esc(t.year)} ${esc(t.car)}・${esc(t.km) || '—'}・期望 ${t.ask ? money(t.ask) : '—'}`;
+function monthsList(dates) { const s = new Set([ym(D.today)]); dates.forEach(d => d && d >= START && s.add(ym(d))); return [...s].sort().reverse(); }
+function renderVisits() {
+  const M = boardMonth.replace('/', '/'), mVis = VISITS.filter(x => ym(x.date) === boardMonth), todayN = VISITS.filter(x => x.date === D.today).length;
+  const mOrders = ORDERS.filter(o => ym(o.date) === boardMonth).length, mSee = mVis.filter(x => x.purposes.includes('看車')).length, mTrade = mVis.filter(x => x.trade).length;
+  const people = [...new Set([...SALES(), ...mVis.map(x => x.sales)])].map(s => { const l = mVis.filter(x => x.sales === s); return { s, n: l.length, see: l.filter(x => x.purposes.includes('看車')).length, tr: l.filter(x => x.trade).length, o: ORDERS.filter(o => o.seller === s && ym(o.date) === boardMonth).length }; });
+  const srcs = D.sources.map(src => ({ src, n: mVis.filter(x => x.type === src).length })), maxS = Math.max(1, ...srcs.map(x => x.n));
+  const stock = CARS.filter(c => status(c) === '在庫').map(c => { const l = visitsOf(c); return { c, n: l.length, n30: l.filter(x => diffD(x.date, D.today) <= 30).length, last: l.map(x => x.date).sort().pop(), d: stockDays(c), who: [...new Set(l.map(x => x.sales))] }; }).sort((a, b) => b.n30 - a.n30 || b.n - a.n);
+  const tag = r => r.n30 >= 3 ? '<span class="pill active">熱門未成交</span>' : r.d >= 90 && r.n30 === 0 ? '<span class="pill stale">30 天沒人看</span>' : '';
+  const trades = VISITS.filter(x => x.trade).sort((a, b) => (a.tradeStatus === '追蹤中' ? 0 : 1) - (b.tradeStatus === '追蹤中' ? 0 : 1) || b.date.localeCompare(a.date));
+  let log = [...VISITS].sort((a, b) => b.date.localeCompare(a.date));
+  if (visQ) { const q = visQ.toLowerCase(); log = log.filter(x => [x.cust, x.sales, x.type, x.note, x.trade?.car, ...x.carIds.map(id => { const c = carById(id); return c ? c.model + ' ' + c.plate : ''; })].join(' ').toLowerCase().includes(q)); }
+  return `
+  <section class="row" style="justify-content:space-between">
+    <div><h2 style="font-size:18px">來客紀錄</h2><div class="small muted">看車和估車都記在這裡</div></div>
+    <div class="row"><select id="vm" aria-label="月份">${monthsList(VISITS.map(v => v.date)).map(m => `<option value="${m}" ${m === boardMonth ? 'selected' : ''}>${m}</option>`).join('')}</select>
+      <button class="btn" data-visit="trade">＋登記估車</button><button class="btn acc" data-visit="">＋登記來客</button></div>
+  </section>
+  <section class="kpis">
+    <div class="kpi"><div class="label">今日來客</div><div class="n">${todayN}</div></div>
+    <div class="kpi"><div class="label">${M} 來客</div><div class="n">${mVis.length}</div><div class="small muted">看車 ${mSee}・估車 ${mTrade}</div></div>
+    <div class="kpi"><div class="label">${M} 收訂</div><div class="n">${mOrders}</div></div>
+    <div class="kpi ok"><div class="label">看車成交率</div><div class="n">${mSee ? Math.round(mOrders / mSee * 100) : 0}%</div></div>
+  </section>
+  <section class="panel sec"><h3 style="font-size:16px">客人從哪裡來</h3>
+    ${srcs.map(x => `<div style="display:grid;grid-template-columns:72px 1fr 28px;gap:8px;align-items:center" class="small"><span>${x.src}</span><span style="height:10px;border-radius:3px;background:var(--surface2);overflow:hidden"><span style="display:block;height:100%;width:${x.n / maxS * 100}%;background:var(--pri)"></span></span><span class="mono" style="text-align:right">${x.n}</span></div>`).join('')}</section>
+  <section class="panel sec"><h3 style="font-size:16px">各業務來客與收訂</h3>
+    <div class="tbl-wrap"><table style="min-width:420px"><thead><tr><th>業務</th><th>來客</th><th>看車</th><th>估車</th><th>收訂</th><th>看車成交率</th></tr></thead>
+    <tbody>${people.map(p => `<tr><td><b>${esc(p.s)}</b></td><td class="mono">${p.n}</td><td class="mono">${p.see}</td><td class="mono">${p.tr}</td><td class="mono">${p.o}</td><td class="mono">${p.see ? Math.round(p.o / p.see * 100) + '%' : '—'}</td></tr>`).join('')}</tbody></table></div></section>
+  <section class="panel sec"><h3 style="font-size:16px">估車客人</h3>
+    <div class="tbl-wrap"><table style="min-width:720px"><thead><tr><th>日期</th><th>客人</th><th>業務</th><th>來源</th><th>客人的車</th><th>備註</th><th>狀態</th><th></th></tr></thead>
+    <tbody>${trades.map(x => `<tr><td class="mono">${md(x.date)}</td><td><b>${esc(x.cust)}</b></td><td>${esc(x.sales)}</td><td class="small">${esc(x.type)}</td><td class="small">${tradeTxt(x.trade)}</td><td class="small muted">${esc(x.note)}</td>
+      <td>${x.tradeStatus === '已收購' ? '<span class="pill ready">已收購</span>' : x.tradeStatus === '未成交' ? '<span class="pill done">未成交</span>' : '<span class="pill active">追蹤中</span>'}</td>
+      <td>${x.tradeStatus === '追蹤中' ? `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn acc" data-tradebuy="${x.id}">收購入庫</button><button class="btn" data-tradelost="${x.id}">未成交</button></div>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">還沒有估車紀錄</td></tr>'}</tbody></table></div>
+    <p class="small muted" style="margin:0">「收購入庫」會打開新增採購並帶入車款；送出後分點表收車 +1，這筆估車改成已收購。</p></section>
+  <section class="panel sec"><h3 style="font-size:16px">在庫車輛熱度</h3>
+    <div class="tbl-wrap"><table style="min-width:620px"><thead><tr><th>車輛</th><th>庫存天</th><th>近30天看車</th><th>累計</th><th>最近看車</th><th>誰的客人</th><th></th></tr></thead>
+    <tbody>${stock.map(r => `<tr><td><b>${esc(label(r.c))}</b> <span class="mono small muted">${esc(r.c.plate)}</span></td><td class="mono">${r.d}</td><td class="mono">${r.n30}</td>
+      <td>${r.n ? `<button class="chip" data-vlist="${r.c.id}">${r.n} 組</button>` : '<span class="muted">0</span>'}</td><td class="mono small">${r.last ? md(r.last) : '—'}</td><td class="small">${esc(r.who.join('、')) || '—'}</td><td>${tag(r)}</td></tr>`).join('')}</tbody></table></div></section>
+  <section class="panel sec">
+    <div class="row" style="justify-content:space-between"><h3 style="font-size:16px">來客明細</h3><input type="text" id="vq" placeholder="搜尋客人、業務、車型" value="${esc(visQ)}" aria-label="搜尋來客"></div>
+    <div class="tbl-wrap"><table style="min-width:680px"><thead><tr><th>日期</th><th>客人</th><th>業務</th><th>來源</th><th>來意</th><th>看了哪些車／估車</th><th>備註</th></tr></thead>
+    <tbody>${log.map(x => `<tr><td class="mono">${md(x.date)}</td><td><b>${esc(x.cust)}</b></td><td>${esc(x.sales)}</td><td class="small">${esc(x.type)}</td><td class="small">${x.purposes.join('＋')}</td>
+      <td class="small">${[x.carIds.map(id => { const c = carById(id); return c ? esc(label(c)) : ''; }).filter(Boolean).join('、'), x.trade ? '估：' + tradeTxt(x.trade) : ''].filter(Boolean).join('<br>')}</td><td class="small muted">${esc(x.note)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">沒有紀錄</td></tr>'}</tbody></table></div></section>`;
+}
+
+// ===== 分點表 =====
+function boardData(month) {
+  const year = month.slice(0, 4), z = () => ({ buy: 0, order: 0, deliver: 0 }), M = {}, Y = {}, L = {};
+  ROWS().forEach(r => { M[r] = z(); Y[r] = z(); L[r] = { buy: [], order: [], deliver: [] }; });
+  D.base.filter(b => b['年度'] === year).forEach(b => { const r = b['列']; if (Y[r]) { Y[r].buy += +b['收車'] || 0; Y[r].order += +b['訂車'] || 0; Y[r].deliver += +b['交車'] || 0; } });
+  const tag = c => `${String(c.year).slice(0, 4)}_${c.model}_${c.color}`;
+  CARS.filter(c => !c.official && c.inDate >= START).forEach(c => { const r = rowOf(c.buyer); if (!M[r]) return; if (ym(c.inDate) === month) { M[r].buy++; L[r].buy.push(tag(c)); } if (c.inDate.slice(0, 4) === year) Y[r].buy++; });
+  ORDERS.filter(o => o.status !== '已退訂').forEach(o => { const r = rowOf(o.seller), c = carById(o.carId); if (!M[r] || !c) return;
+    if (o.date >= START) { if (ym(o.date) === month) { M[r].order++; L[r].order.push(tag(c)); } if (o.date.slice(0, 4) === year) Y[r].order++; }
+    if (o.delivered && o.delivered >= START) { if (ym(o.delivered) === month) { M[r].deliver++; L[r].deliver.push(tag(c)); } if (o.delivered.slice(0, 4) === year) Y[r].deliver++; } });
+  return { M, Y, L };
+}
+function renderBoard() {
+  const { M, Y, L } = boardData(boardMonth);
+  const T = {}; D.targets.forEach(t => T[t['列']] = { buy: +t['收車'] || 0, order: +t['訂車'] || 0, deliver: +t['交車'] || 0 });
+  const tg = (r, k) => (T[r] || {})[k] ?? 0;
+  const sum = (o, k) => ROWS().reduce((a, r) => a + o[r][k], 0), tsum = k => ROWS().reduce((a, r) => a + tg(r, k), 0);
+  const cell = (r, k) => { const a = M[r][k], t = tg(r, k); return `<td class="tgt">${t}</td><td class="act ${a === 0 ? 'zero' : a >= t ? 'hit' : ''}">${a}</td><td class="yr">${Y[r][k]}</td>`; };
+  const lst = k => ROWS().map(r => `<div class="who-h">${r}</div>${L[r][k].map(c => `<div class="car">${esc(c)}</div>`).join('')}`).join('');
+  return `
+  <section class="row" style="justify-content:space-between">
+    <div><h2 style="font-size:18px">頂好汽車｜文中店 分點表</h2><div class="small muted">自動統計，所有員工都看得到</div></div>
+    <div class="row"><select id="bm" aria-label="月份">${monthsList([...CARS.map(c => c.inDate), ...ORDERS.map(o => o.date), ...ORDERS.map(o => o.delivered)]).map(m => `<option value="${m}" ${m === boardMonth ? 'selected' : ''}>${m}</option>`).join('')}</select>
+    ${isBoss() ? '<button class="btn" data-act="targets">調整目標</button><button class="btn" data-act="base">年度基準</button>' : ''}</div>
+  </section>
+  <section class="panel board" style="padding:0"><div class="tbl-wrap"><table>
+    <thead><tr><th rowspan="2" style="text-align:left">${boardMonth}</th><th colspan="3" class="g1">收車（採購）</th><th colspan="3" class="g2">訂車</th><th colspan="3" class="g3">交車</th></tr>
+    <tr><th class="g1">目標</th><th class="g1">當月</th><th class="g1">年度</th><th class="g2">目標</th><th class="g2">當月</th><th class="g2">年度</th><th class="g3">目標</th><th class="g3">當月</th><th class="g3">年度</th></tr></thead>
+    <tbody>${ROWS().map(r => `<tr><td class="name">${r}</td>${cell(r, 'buy')}${cell(r, 'order')}${cell(r, 'deliver')}</tr>`).join('')}
+    <tr class="total"><td class="name">TOTAL</td>${['buy', 'order', 'deliver'].map(k => `<td class="tgt">${tsum(k)}</td><td class="act">${sum(M, k)}</td><td class="yr">${sum(Y, k)}</td>`).join('')}</tr></tbody>
+  </table></div></section>
+  <section class="lists"><div class="panel"><h4>當月收車</h4>${lst('buy')}</div><div class="panel"><h4>當月訂車</h4>${lst('order')}</div><div class="panel"><h4>當月交車</h4>${lst('deliver')}</div></section>
+  <section class="panel sec"><h3 style="font-size:16px">最近的 LINE 推播</h3>
+    ${D.pushes.map(p => `<div class="push"><span class="ic">LINE</span><div><b>${esc(p['內容']).replace(/\n/g, '<br>')}</b><div class="small muted">${esc(p['時間'])}・${esc(p['對象'])}${p['結果'] === '成功' ? '' : '・<span style="color:var(--warn)">傳送失敗</span>'}</div></div></div>`).join('') || '<span class="muted small">還沒有推播</span>'}</section>
+  <p class="small muted" style="margin:0">年度數字＝上線前累計（試算表「年度基準」）＋ ${START} 之後系統裡的紀錄。</p>`;
+}
+function numTable(id, rows, get) {
+  return `<form id="${id}"><div class="tbl-wrap"><table style="min-width:0"><thead><tr><th></th><th>收車</th><th>訂車</th><th>交車</th></tr></thead>
+  <tbody>${rows.map(r => `<tr><td><b>${r}</b></td>${['buy', 'order', 'deliver'].map(k => `<td><input type="number" min="0" data-r="${r}" data-k="${k}" value="${get(r, k)}" style="width:70px"></td>`).join('')}</tr>`).join('')}</tbody></table></div>
+  <div class="row" style="justify-content:flex-end;margin-top:12px"><button type="button" class="btn" data-mclose>取消</button><button class="btn pri" type="submit">儲存</button></div></form>`;
+}
+
+// ===== 獎金結算（主管）=====
+function bonusOf(o) {
+  const c = carById(o.carId); if (!c || c.floor == null || o.price == null) return null;
+  const r = calcBonus(c, o.price, !SALES().includes(o.seller));
+  return { ...r, c, fSale: o.fSale !== '' ? +o.fSale : r.sale, fBuy: o.fBuy !== '' ? +o.fBuy : r.buy, pending: r.sale == null && o.fSale === '' && SALES().includes(o.seller) };
+}
+function renderBonus() {
+  if (!isBoss()) return '<div class="panel">只有主管看得到</div>';
+  const list = ORDERS.filter(o => o.status === '已交車' && ym(o.delivered) === bonusMonth).sort((a, b) => a.delivered.localeCompare(b.delivered));
+  const waiting = ORDERS.filter(o => o.status === '已收訂').sort((a, b) => a.date.localeCompare(b.date));
+  const sum = {}; SALES().forEach(s => sum[s] = { sale: 0, buy: 0, pending: 0 });
+  list.forEach(o => { const b = bonusOf(o); if (!b) return; if (sum[o.seller]) { sum[o.seller].sale += b.fSale || 0; if (b.pending) sum[o.seller].pending++; } if (b.buyer && sum[b.buyer]) sum[b.buyer].buy += b.fBuy || 0; });
+  const inp = (o, k, calc) => `<input type="number" data-bf="${o.id}|${k}" value="${(k === 'sale' ? o.fSale : o.fBuy) !== '' ? (k === 'sale' ? o.fSale : o.fBuy) : (calc ?? '')}" placeholder="${calc == null ? '待斟酌' : ''}" style="width:92px;${calc == null && o.fSale === '' && k === 'sale' ? 'border-color:var(--warn)' : ''}" aria-label="核定">`;
+  return `
+  <div class="notice secret">此頁只有主管看得到。獎金依交車月發放；低於底價的單標紅，等你斟酌金額。</div>
+  <section class="row" style="justify-content:space-between"><h2 style="font-size:18px">獎金結算</h2>
+    <div class="row"><label class="label" for="bmon">交車月份</label><select id="bmon">${monthsList(ORDERS.map(o => o.delivered)).map(m => `<option value="${m}" ${m === bonusMonth ? 'selected' : ''}>${m}</option>`).join('')}</select></div></section>
+  <section class="kpis">${SALES().map(s => `<div class="kpi"><div class="label">${s}</div><div class="n">${money(sum[s].sale + sum[s].buy)}</div><div class="small muted">銷售 ${money(sum[s].sale)}・採購 ${money(sum[s].buy)}${sum[s].pending ? `・<b style="color:var(--warn)">待斟酌 ${sum[s].pending}</b>` : ''}</div></div>`).join('')}
+    <div class="kpi"><div class="label">合計</div><div class="n">${money(Object.values(sum).reduce((a, b) => a + b.sale + b.buy, 0))}</div><div class="small muted">交車 ${list.length} 台</div></div></section>
+  <section class="panel" style="padding:0"><div class="tbl-wrap"><table style="min-width:1080px;font-size:13.5px">
+    <thead><tr><th>交車日</th><th>車輛</th><th>客人</th><th style="text-align:right">成交價</th><th style="text-align:right">底價</th><th style="text-align:right">差額</th><th>銷售</th><th style="text-align:right">試算</th><th>核定</th><th>採購人</th><th style="text-align:right">試算</th><th>核定</th></tr></thead>
+    <tbody>${list.map(o => { const b = bonusOf(o); if (!b) return `<tr><td colspan="12" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const c = b.c, comp = !SALES().includes(o.seller);
+      return `<tr style="${b.below ? 'background:var(--warn-soft)' : ''}"><td class="mono">${md(o.delivered)}<div class="small muted">收訂 ${md(o.date)}</div></td><td><b>${esc(label(c))}</b><div class="mono small muted">${esc(c.plate)}</div></td><td>${esc(o.cust)}</td>
+      <td class="mono" style="text-align:right">${money(o.price)}</td><td class="mono" style="text-align:right">${money(c.floor)}</td><td class="mono" style="text-align:right;color:${b.below ? 'var(--warn)' : 'var(--ok)'}">${b.diff >= 0 ? '+' : ''}${money(b.diff)}</td>
+      <td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${comp ? '—' : inp(o, 'sale', b.sale)}</td>
+      <td>${esc(c.buyer)}${b.buyer ? `<div class="small muted">採購 ${money(c.cost) || '未填'}</div>` : ''}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">低於底價・無</span>' : money(b.buy)}</td><td>${b.buyer && !b.below ? inp(o, 'buy', b.buy) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="12" class="muted">這個月沒有交車</td></tr>'}</tbody></table></div></section>
+  <section class="panel sec"><h3 style="font-size:16px">已收訂、還沒交車（交車後列入）</h3>
+    <div class="tbl-wrap"><table style="min-width:720px;font-size:13.5px"><thead><tr><th>收訂日</th><th>車輛</th><th>銷售</th><th style="text-align:right">成交價／底價</th><th style="text-align:right">銷售試算</th><th>採購人</th><th style="text-align:right">採購試算</th><th>預計交車</th></tr></thead>
+    <tbody>${waiting.map(o => { const b = bonusOf(o); const c = carById(o.carId); if (!b) return `<tr><td colspan="8" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const comp = !SALES().includes(o.seller);
+      return `<tr><td class="mono">${md(o.date)}</td><td><b>${esc(label(c))}</b> <span class="mono small muted">${esc(c.plate)}</span></td><td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${money(o.price)} / ${money(c.floor)}</td>
+      <td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${esc(c.buyer)}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">無</span>' : money(b.buy)}</td><td class="mono">${o.eta ? md(o.eta) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">沒有</td></tr>'}</tbody></table></div></section>
+  <p class="small muted" style="margin:0">銷售獎金＝保底獎金＋（成交價−底價）×30%，低於底價由主管斟酌；公司車（管理員收訂）沒有銷售獎金。採購獎金只算業務採購的車：採購金額 50 萬以下保底 1,000、以上 3,000，再加（成交價−底價）×20%；低於底價沒有採購獎金。核定欄改過的以核定為準。</p>`;
+}
+
+// ===== 畫面 =====
+function watermark() {
+  const w = $('#wm'); if (page !== 'stock' || !D) { w.hidden = true; return; }
+  const txt = `${D.me.name} ${D.today}`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='240' height='150'><text x='10' y='85' transform='rotate(-20 120 75)' font-size='14' font-family='sans-serif' fill='rgba(128,128,128,0.13)'>${txt}</text></svg>`;
+  w.style.backgroundImage = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`; w.hidden = false;
+}
+function render() {
+  if (!D) return;
+  if (page === 'bonus' && !isBoss()) page = 'stock';
+  document.querySelectorAll('[data-page]').forEach(b => b.setAttribute('aria-selected', b.dataset.page === page));
+  const v = $('#view');
+  v.innerHTML = page === 'stock' ? renderStock() : page === 'count' ? renderCount() : page === 'visits' ? renderVisits() : page === 'board' ? renderBoard() : renderBonus();
+  v.style.cssText = 'display:flex;flex-direction:column;gap:14px';
+  watermark();
+}
+
+// ===== 事件 =====
+document.addEventListener('click', async e => {
+  if (e.target.id === 'modal') { closeModal(); return; }
+  const t = e.target.closest('button,[data-mclose]'); if (!t) return;
+  const ds = t.dataset;
+  if (ds.reload !== undefined) { $('#view').innerHTML = '<div class="loading">讀取資料中…</div>'; await load(); return; }
+  if (!D) return;
+  if (ds.mclose !== undefined) { closeModal(); return; }
+  if (ds.page) { page = ds.page; render(); window.scrollTo(0, 0); return; }
+  if (ds.sf) { stockFilter = ds.sf; render(); return; }
+  if (ds.act === 'buy') { openModal(carForm(null)); return; }
+  if (ds.act === 'targets') { const T = {}; D.targets.forEach(x => T[x['列']] = x); openModal('<h3>調整每月目標</h3>' + numTable('tf', ROWS(), (r, k) => (T[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
+  if (ds.act === 'base') { const y = boardMonth.slice(0, 4), B = {}; D.base.filter(b => b['年度'] === y).forEach(b => B[b['列']] = b); openModal(`<h3>${y} 年度基準（上線前累計）</h3><p class="small muted" style="margin:0">系統上線（${START}）之前的年度累計數字，會加進分點表的「年度」欄。</p>` + numTable('basef', ROWS(), (r, k) => (B[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
+  if (ds.edit) { openModal(carForm(carById(ds.edit))); return; }
+  if (ds.order) { const c = carById(ds.order); openModal(orderForm(c)); updCalc(c); $('#o-price').addEventListener('input', () => updCalc(c)); $('#o-sales') && $('#o-sales').addEventListener('change', () => updCalc(c)); return; }
+  if (ds.ord) { openModal(orderModal(ORDERS.find(o => o.id === ds.ord))); return; }
+  if (ds.cancel) { const o = ORDERS.find(x => x.id === ds.cancel); openModal(`<h3>確定退訂？</h3><p style="margin:0">${esc(o.label)}（${esc(o.plate)}）・客戶 ${esc(o.cust)}</p><p class="small muted" style="margin:0">退訂後車輛回到可收訂，分點表 ${rowOf(o.seller)} 的訂車數扣回。</p><div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>取消</button><button class="btn danger" data-cancelok="${o.id}">確定退訂</button></div>`); return; }
+  if (ds.cancelok) { await act({ action: 'cancelOrder', id: ds.cancelok }, t); return; }
+  if (ds.visit !== undefined) { openModal(visitForm(ds.visit)); return; }
+  if (ds.vlist) { openModal(carVisits(carById(ds.vlist))); return; }
+  if (ds.tradebuy) { const x = VISITS.find(v => v.id === ds.tradebuy); pendingTrade = x.id; const [b, ...m] = x.trade.car.split(' ');
+    openModal(carForm(null, { trade: { brand: b || '', model: m.join(' '), year: x.trade.year, km: x.trade.km, cost: x.trade.ask } })); pendingTrade = x.id; return; }
+  if (ds.tradelost) { await act({ action: 'setTrade', id: ds.tradelost, status: '未成交' }, t); return; }
+  if (ds.cs) { const [id, st] = ds.cs.split('|'); draft[id].s = st; if (st === '外出' && !draft[id].reason) draft[id].reason = D.outReasons[0]; render(); return; }
+  if (ds.allin !== undefined) { Object.values(draft).forEach(d => d.s = '在店'); render(); return; }
+  if (ds.hd) { histDays = +ds.hd; render(); return; }
+  if (ds.csubmit !== undefined) { await act({ action: 'submitCheck', items: Object.entries(draft).map(([id, d]) => ({ id, s: d.s, reason: d.reason, note: d.note })) }, t); return; }
+});
+document.addEventListener('input', e => {
+  const id = e.target.id;
+  if (id === 'sq' || id === 'vq') { if (id === 'sq') stockQ = e.target.value; else visQ = e.target.value; const pos = e.target.selectionStart; render(); const s = $('#' + id); s.focus(); s.setSelectionRange(pos, pos); }
+});
+document.addEventListener('change', async e => {
+  const t = e.target, id = t.id;
+  if (id === 'bm' || id === 'vm') { boardMonth = t.value; render(); }
+  if (id === 'bmon') { bonusMonth = t.value; render(); }
+  if (id === 'c-p-see') $('#c-see-box').hidden = !t.checked;
+  if (id === 'c-p-trade') $('#c-trade-box').hidden = !t.checked;
+  if (t.dataset.cr) draft[t.dataset.cr].reason = t.value;
+  if (t.dataset.cn) draft[t.dataset.cn].note = t.value;
+  if (t.dataset.bf) { const [oid, k] = t.dataset.bf.split('|'); await act({ action: 'setBonus', id: oid, kind: k, value: t.value }); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button[type=submit]'), g = id => ($('#' + id) ? $('#' + id).value.trim() : '');
+  if (f.id === 'cf') {
+    const editId = f.dataset.id;
+    if (editId) {
+      const fields = { '進貨日': isoOut(g('f-in')), '車牌': g('f-plate').toUpperCase(), '廠牌': g('f-brand').toUpperCase(), '車型': g('f-model'), '年份': g('f-year'), '顏色': g('f-color'),
+        '里程': g('f-km'), '認證': g('f-cert'), '廠證': g('f-fc'), '鑰匙': g('f-keys'), '採購': g('f-buyer'), '採購金額': g('f-cost'), '備註': g('f-note'),
+        '開價': g('f-ask'), '底價': g('f-floor'), '保底獎金': g('f-bonus'), '管理人': g('f-mgr'), '類別': $('#f-official')?.checked ? '公務車' : '一般' };
+      await act({ action: 'updateCar', id: editId, fields }, btn);
+    } else {
+      const car = { inDate: isoOut(g('f-in')), plate: g('f-plate'), brand: g('f-brand'), model: g('f-model'), year: g('f-year'), color: g('f-color'), km: g('f-km'),
+        cert: g('f-cert'), fc: g('f-fc'), keys: g('f-keys'), buyer: g('f-buyer'), cost: g('f-cost'), note: g('f-note'), official: !!$('#f-official')?.checked };
+      await act({ action: 'addCar', car, visitId: pendingTrade || '' }, btn);
+    }
+  }
+  if (f.id === 'of') await act({ action: 'addOrder', carId: f.dataset.id, seller: g('o-sales'), date: isoOut(g('o-date')), customer: g('o-cust'), price: g('o-price'), eta: isoOut(g('o-eta')) }, btn);
+  if (f.id === 'dlv') await act({ action: 'deliver', id: f.dataset.id, date: isoOut(g('d-date')) }, btn);
+  if (f.id === 'vf') {
+    const visit = { date: isoOut(g('c-date')), sales: g('c-sales'), customer: g('c-cust'), source: g('c-type'), see: $('#c-p-see').checked, trade: $('#c-p-trade').checked,
+      carIds: [...document.querySelectorAll('input[name="c-car"]:checked')].map(x => x.value), tradeCar: g('t-car'), tradeYear: g('t-year'), tradeKm: g('t-km'), tradeAsk: g('t-ask'), note: g('c-note') };
+    await act({ action: 'addVisit', visit }, btn);
+  }
+  if (f.id === 'tf' || f.id === 'basef') {
+    const rows = ROWS().map(r => { const o = { row: r }; f.querySelectorAll(`input[data-r="${r}"]`).forEach(i => o[i.dataset.k] = i.value); return o; });
+    await act(f.id === 'tf' ? { action: 'saveTargets', targets: rows } : { action: 'saveBase', year: boardMonth.slice(0, 4), base: rows }, btn);
+  }
+});
+
+// ===== 啟動 =====
+(async function main() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    await load();
+  } catch (e) {
+    $('#view').innerHTML = `<div class="panel">無法連線：${esc(e.message || e)}<br>請關閉頁面，從「頂好汽車｜文中店打卡」選單重新開啟。</div>`;
+  }
+})();
+</script>
+</body>
+</html>
