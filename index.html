@@ -123,6 +123,25 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
 .log{display:flex;flex-direction:column;gap:6px;font-size:13px}
 .log div{display:grid;grid-template-columns:56px 1fr;gap:8px}
+/* prep (phase 2) */
+.grid2{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+.olist{display:flex;flex-direction:column;gap:8px}
+.ocard{text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;width:100%}
+.ocard[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.bar{display:flex;gap:3px}.bar i{flex:1;height:7px;border-radius:2px;background:var(--line)}.bar i.d{background:var(--ok)}.bar i.a{background:var(--accent)}
+.stg{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+.stg:last-child{border-bottom:0}
+.dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid var(--line);color:var(--muted)}
+.stg.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}.stg.active .dot{border-color:var(--accent);color:var(--accent)}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap}.thumbs img{width:84px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--surface2)}
+.drop{border:1.5px dashed var(--line);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-size:13px;display:block;cursor:pointer}
+.drop input{display:none}
+.tl{display:flex;flex-direction:column;gap:12px}
+.tl .it{border-left:3px solid var(--ok);padding-left:10px}
+.bind{border-radius:8px;padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+.bind.no{background:var(--accent-soft)}.bind.yes{background:var(--ok-soft)}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:grid;place-items:center;z-index:40;padding:12px}.lightbox img{max-width:100%;max-height:88vh;border-radius:6px}
 </style>
 </head>
 <body>
@@ -133,6 +152,7 @@ th{font-size:12px;color:var(--muted);font-weight:700}
   </header>
   <nav class="pages" role="tablist" id="nav" hidden>
     <button role="tab" data-page="stock">車源表</button>
+    <button role="tab" data-page="prep">整備交車</button>
     <button role="tab" data-page="count">每日點車</button>
     <button role="tab" data-page="visits">來客紀錄</button>
     <button role="tab" data-page="board">分點表</button>
@@ -142,6 +162,7 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 </div>
 <div id="wm" class="wm" hidden></div>
 <div id="toast" class="toast" hidden></div>
+<div id="lb" class="lightbox" hidden><img id="lbimg" alt="照片放大"></div>
 <div id="modal" class="modal" hidden><div class="box" id="mbox" role="dialog" aria-modal="true"></div></div>
 
 <script>
@@ -187,7 +208,7 @@ async function act(payload, busyBtn) {
 }
 
 // ===== 資料 =====
-let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {};
+let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {}, PROGRESS = [], selOrder = null, pendingPhotos = [];
 let page = 'stock', stockFilter = '庫存中', stockQ = '', boardMonth = '', bonusMonth = '', visQ = '', histDays = 10, draft = null, pendingTrade = null;
 const isBoss = () => D && D.me.isBoss;
 const SALES = () => D.salesNames;
@@ -200,7 +221,8 @@ function normalize() {
     bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), official: c['類別'] === '公務車', note: c['備註'] }));
   ORDERS = D.orders.map(o => ({ id: o['編號'], carId: o['車輛編號'], plate: o['車牌'], label: o['車款'], seller: o['收訂業務'], date: o['收訂日'],
     cust: o['客戶'], price: N(o['成交價']), eta: o['預計交車日'], status: o['狀態'], delivered: o['交車日'],
-    fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'] }));
+    fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'], stage: +o['整備階段'] || 0, token: o['客戶頁代碼'], code: o['綁定碼'], bound: !!o.bound }));
+  PROGRESS = (D.progress || []).map(p => ({ orderId: p['訂單編號'], stage: +p['階段'], note: p['說明'], photos: p.photoUrls || [], by: p['回報人'], time: p['時間'], push: p['推播'] }));
   VISITS = D.visits.map(v => ({ id: v['編號'], date: v['日期'], cust: v['客戶'], type: v['來源'], sales: v['接待業務'], purposes: (v['來意'] || '').split('＋').filter(Boolean),
     carIds: (v['看車編號'] || '').split(',').filter(Boolean), trade: v['估車車款'] ? { car: v['估車車款'], year: v['估車年份'], km: v['估車里程'], ask: N(v['期望價']) } : null,
     tradeStatus: v['估車狀態'], note: v['備註'] }));
@@ -267,7 +289,7 @@ function renderStock() {
         <td><div class="row" style="gap:6px;flex-wrap:nowrap">
           ${isBoss() ? `<button class="btn" data-edit="${c.id}">${priced || c.official ? '修改' : '定價'}</button>` : ''}
           ${st === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button><button class="btn acc" data-order="${c.id}" ${priced ? '' : 'disabled'}>收訂</button>`
-            : st === '已收訂' ? `<button class="btn pri" data-ord="${o.id}">交車／退訂</button>` : ''}
+            : st === '已收訂' ? `<button class="btn pri" data-prepgo="${o.id}">整備／交車</button>` : ''}
         </div></td></tr>`;
     }).join('') || '<tr><td colspan="19" class="muted">沒有符合的車輛</td></tr>'}</tbody>
   </table></div></section>
@@ -345,6 +367,74 @@ function orderModal(o) {
     <p class="small muted" style="margin:0">完成交車：從庫存表移出，分點表交車 +1（不推播），列入交車月份的獎金結算。</p>
     <div class="row" style="justify-content:space-between"><button class="btn danger" data-cancel="${o.id}">退訂</button><button class="btn" data-mclose>關閉</button></div>`
     : '<p class="small muted">只有收訂業務或主管可以交車或退訂。</p><div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button></div>'}`;
+}
+
+// ===== 整備交車（第二階段）=====
+const STG = () => D.stages || ['收訂成交', '貸款／尾款', '過戶／領牌', '保養／維修', '可交車'];
+function canReport(o) { const c = carById(o.carId); return isBoss() || o.seller === D.me.en || (c && c.manager === D.me.en); }
+function myPrep() {
+  return ORDERS.filter(o => o.status === '已收訂' && (isBoss() || o.seller === D.me.en || carById(o.carId)?.manager === D.me.en))
+    .sort((a, b) => (b.stage === STG().length - 1) - (a.stage === STG().length - 1) || a.date.localeCompare(b.date));
+}
+const pbar = o => `<div class="bar">${STG().map((s, i) => `<i class="${i <= o.stage ? 'd' : i === o.stage + 1 ? 'a' : ''}"></i>`).join('')}</div>`;
+const stagePill = o => o.stage >= STG().length - 1 ? '<span class="pill ready">可交車</span>' : `<span class="pill active">${STG()[o.stage]}完成</span>`;
+function lastUpdate(o) { const l = PROGRESS.filter(p => p.orderId === o.id).map(p => p.time).sort().pop(); return l || ''; }
+function renderPrep() {
+  const list = myPrep();
+  if (!list.find(o => o.id === selOrder)) selOrder = list[0]?.id || null;
+  const o = ORDERS.find(x => x.id === selOrder);
+  return `
+  <section class="row" style="justify-content:space-between"><div><h2 style="font-size:18px">整備交車</h2>
+    <div class="small muted">${isBoss() ? '所有整備中的訂單' : '你收訂的車和你管理的車'}・回報會從收訂業務的官方帳號通知客人</div></div></section>
+  ${!list.length ? '<div class="panel">目前沒有整備中的訂單。在「車源表」按「收訂」後就會出現在這裡。</div>' : `
+  <div class="grid2">
+    <aside class="olist">${list.map(m => { const c = carById(m.carId); const stale = lastUpdate(m) && diffD(lastUpdate(m).slice(0, 10), D.today) > 3;
+      return `<button class="ocard" data-sel="${m.id}" aria-current="${m.id === selOrder}">
+        <span class="row" style="justify-content:space-between;width:100%"><b>${esc(m.cust)}</b><span class="mono small muted">${esc(m.plate)}</span></span>
+        <span class="small muted">${esc(label(c))}・收訂 ${esc(m.seller)}${c.manager && c.manager !== m.seller ? '・管理 ' + esc(c.manager) : ''}</span>
+        ${pbar(m)}<span class="row" style="gap:6px">${stagePill(m)}${m.bound ? '<span class="pill done">LINE 已綁定</span>' : SALES().includes(m.seller) ? '<span class="pill stale">未綁定</span>' : ''}${stale ? '<span class="pill stale">超過3天未回報</span>' : ''}</span></button>`; }).join('')}</aside>
+    ${o ? prepDetail(o) : ''}
+  </div>`}`;
+}
+function prepDetail(o) {
+  const c = carById(o.carId), ups = PROGRESS.filter(p => p.orderId === o.id).sort((a, b) => b.time.localeCompare(a.time));
+  const isCo = !SALES().includes(o.seller), oaOk = (D.oaReady || []).includes(o.seller), url = D.customerPage + '?t=' + o.token;
+  const next = Math.min(o.stage + 1, STG().length - 1), can = canReport(o), canDel = isBoss() || o.seller === D.me.en;
+  const msg = `${o.cust}您好，我是永駿車業的${o.seller}，謝謝您的訂購！\n您的愛車整備進度可以在這裡隨時查看：\n${url}\n\n在這個聊天室回覆「綁定 ${o.code}」，之後每一次的整備進度都會用 LINE 通知您喔！`;
+  return `<section style="display:flex;flex-direction:column;gap:12px;min-width:0">
+    <div class="panel sec">
+      <div class="row" style="justify-content:space-between"><div><h3 style="font-size:17px">${esc(o.cust)}・${esc(label(c))}</h3>
+        <div class="small muted"><span class="mono">${esc(o.plate)}</span>・收訂 ${esc(o.seller)}（${md(o.date)}）・管理 ${esc(c.manager || '—')}・預計交車 ${o.eta ? md(o.eta) : '—'}</div></div>
+        <a class="btn" href="${url}" target="_blank" rel="noopener">看客戶畫面</a></div>
+      <div>${STG().map((s, i) => { const st = i <= o.stage ? 'done' : i === o.stage + 1 ? 'active' : ''; const n = ups.filter(u => u.stage === i);
+        return `<div class="stg ${st}"><span class="dot">${st === 'done' ? '✓' : i + 1}</span><div><b>${s}</b>${n.length ? `<div class="small muted">${n.length} 則回報・${n.reduce((a, u) => a + u.photos.length, 0)} 張照片</div>` : ''}</div>
+          <span class="small ${st === 'active' ? '' : 'muted'}">${st === 'done' ? '完成' : st === 'active' ? '<b style="color:var(--accent)">下一步</b>' : ''}</span></div>`; }).join('')}</div>
+    </div>
+    ${isCo ? `<div class="bind yes"><b>公司車不發 LINE 通知</b><span>可以把客戶專屬頁連結直接傳給客人：</span><input type="text" readonly value="${esc(url)}" id="cpurl"><button class="btn" data-copy="cpurl">複製連結</button></div>`
+      : o.bound ? `<div class="bind yes"><b>✓ 客人已綁定 LINE</b><span>回報時會從 ${esc(o.seller)} 的官方帳號通知客人${oaOk ? '' : '（⚠️ 這個業務帳號還沒設定金鑰，暫時不會推播）'}。</span></div>`
+      : `<div class="bind no"><b>客人還沒綁定 LINE</b><span>把下面這段訊息複製，貼到你的官方帳號和客人的聊天室。客人回覆綁定碼後，之後每次回報都會自動通知他。</span>
+          <textarea id="bindmsg" readonly rows="6">${esc(msg)}</textarea><div class="row"><button class="btn pri" data-copy="bindmsg">複製訊息</button><span class="small muted">綁定碼 <b class="mono">${o.code}</b></span></div></div>`}
+    ${can ? `<form class="panel sec" id="pf">
+      <h3 style="font-size:16px">新增整備回報</h3>
+      <div class="row"><label class="label" for="pstage">階段</label><select id="pstage">${STG().map((s, i) => i === 0 ? '' : `<option value="${i}" ${i === next ? 'selected' : ''}>${s}${i === STG().length - 1 ? '（客人會收到可交車通知）' : ''}</option>`).join('')}</select></div>
+      <label class="drop" for="pphoto">＋ 拍照或選照片（最多 8 張）<input id="pphoto" type="file" accept="image/*" multiple></label>
+      <div class="thumbs" id="pthumbs">${pendingPhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join('')}</div>
+      <label class="label" for="pnote">給客人的說明</label><textarea id="pnote" placeholder="例如：今天完成監理站過戶，新行照已經拿到了。"></textarea>
+      <div class="row" style="justify-content:space-between"><label class="row small" style="gap:6px"><input type="checkbox" id="ppush" ${o.bound && oaOk ? 'checked' : 'disabled'}> 用 LINE 通知客人${o.bound ? '' : '（客人未綁定）'}</label>
+        <button class="btn acc" type="submit">送出回報</button></div></form>` : ''}
+    <div class="panel sec"><h3 style="font-size:16px">整備紀錄</h3>
+      <div class="tl">${ups.map(u => `<div class="it"><b>${STG()[u.stage]}</b> <span class="small muted mono">${esc(u.time.slice(5, 16))}・${esc(u.by)}${u.push ? '・' + esc(u.push) : ''}</span>
+        ${u.note ? `<div class="small">${esc(u.note)}</div>` : ''}${u.photos.length ? `<div class="thumbs" style="margin-top:6px">${u.photos.map(p => `<img src="${p}" alt="整備照片" data-zoom loading="lazy">`).join('')}</div>` : ''}</div>`).join('') || '<span class="muted small">尚無紀錄</span>'}</div></div>
+    ${canDel ? `<div class="panel sec"><h3 style="font-size:16px">交車</h3>
+      <form id="dlv" data-id="${o.id}" class="row"><label class="label" for="d-date">實際交車日</label><input type="date" id="d-date" value="${isoIn(D.today)}" required><button class="btn pri" type="submit">完成交車</button></form>
+      <p class="small muted" style="margin:0">完成交車：從庫存表移出，分點表交車 +1（不推播），列入交車月份的獎金結算。</p>
+      <div><button class="btn danger" data-cancel="${o.id}">退訂</button></div></div>` : ''}
+  </section>`;
+}
+function compress(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onerror = rej; r.onload = () => { const img = new Image(); img.onerror = rej; img.onload = () => {
+    const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); res(cv.toDataURL('image/jpeg', 0.8)); }; img.src = r.result; }; r.readAsDataURL(file); });
 }
 
 // ===== 每日點車 =====
@@ -574,7 +664,7 @@ function render() {
   if (page === 'bonus' && !isBoss()) page = 'stock';
   document.querySelectorAll('[data-page]').forEach(b => b.setAttribute('aria-selected', b.dataset.page === page));
   const v = $('#view');
-  v.innerHTML = page === 'stock' ? renderStock() : page === 'count' ? renderCount() : page === 'visits' ? renderVisits() : page === 'board' ? renderBoard() : renderBonus();
+  v.innerHTML = page === 'stock' ? renderStock() : page === 'prep' ? renderPrep() : page === 'count' ? renderCount() : page === 'visits' ? renderVisits() : page === 'board' ? renderBoard() : renderBonus();
   v.style.cssText = 'display:flex;flex-direction:column;gap:14px';
   watermark();
 }
@@ -582,6 +672,8 @@ function render() {
 // ===== 事件 =====
 document.addEventListener('click', async e => {
   if (e.target.id === 'modal') { closeModal(); return; }
+  if (e.target.closest('#lb')) { $('#lb').hidden = true; return; }
+  if (e.target.matches('img[data-zoom]')) { $('#lbimg').src = e.target.src; $('#lb').hidden = false; return; }
   const t = e.target.closest('button,[data-mclose]'); if (!t) return;
   const ds = t.dataset;
   if (ds.reload !== undefined) { $('#view').innerHTML = '<div class="loading">讀取資料中…</div>'; await load(); return; }
@@ -594,7 +686,9 @@ document.addEventListener('click', async e => {
   if (ds.act === 'base') { const y = boardMonth.slice(0, 4), B = {}; D.base.filter(b => b['年度'] === y).forEach(b => B[b['列']] = b); openModal(`<h3>${y} 年度基準（上線前累計）</h3><p class="small muted" style="margin:0">系統上線（${START}）之前的年度累計數字，會加進分點表的「年度」欄。</p>` + numTable('basef', ROWS(), (r, k) => (B[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
   if (ds.edit) { openModal(carForm(carById(ds.edit))); return; }
   if (ds.order) { const c = carById(ds.order); openModal(orderForm(c)); updCalc(c); $('#o-price').addEventListener('input', () => updCalc(c)); $('#o-sales') && $('#o-sales').addEventListener('change', () => updCalc(c)); return; }
-  if (ds.ord) { openModal(orderModal(ORDERS.find(o => o.id === ds.ord))); return; }
+  if (ds.prepgo) { page = 'prep'; selOrder = ds.prepgo; pendingPhotos = []; render(); window.scrollTo(0, 0); return; }
+  if (ds.sel) { selOrder = ds.sel; pendingPhotos = []; render(); return; }
+  if (ds.copy) { const el = $('#' + ds.copy); el.select(); el.setSelectionRange(0, 99999); let ok = false; try { await navigator.clipboard.writeText(el.value); ok = true; } catch (x) { try { ok = document.execCommand('copy'); } catch (y) {} } toast(ok ? '已複製' : '請長按文字框手動複製'); return; }
   if (ds.cancel) { const o = ORDERS.find(x => x.id === ds.cancel); openModal(`<h3>確定退訂？</h3><p style="margin:0">${esc(o.label)}（${esc(o.plate)}）・客戶 ${esc(o.cust)}</p><p class="small muted" style="margin:0">退訂後車輛回到可收訂，分點表 ${rowOf(o.seller)} 的訂車數扣回。</p><div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>取消</button><button class="btn danger" data-cancelok="${o.id}">確定退訂</button></div>`); return; }
   if (ds.cancelok) { await act({ action: 'cancelOrder', id: ds.cancelok }, t); return; }
   if (ds.visit !== undefined) { openModal(visitForm(ds.visit)); return; }
@@ -615,6 +709,9 @@ document.addEventListener('change', async e => {
   const t = e.target, id = t.id;
   if (id === 'bm' || id === 'vm') { boardMonth = t.value; render(); }
   if (id === 'bmon') { bonusMonth = t.value; render(); }
+  if (id === 'pphoto') { const files = [...t.files].slice(0, 8 - pendingPhotos.length); toast('照片處理中…');
+    for (const f of files) { try { pendingPhotos.push(await compress(f)); } catch (x) {} }
+    $('#pthumbs').innerHTML = pendingPhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join(''); toast(`已選 ${pendingPhotos.length} 張照片`); }
   if (id === 'c-p-see') $('#c-see-box').hidden = !t.checked;
   if (id === 'c-p-trade') $('#c-trade-box').hidden = !t.checked;
   if (t.dataset.cr) draft[t.dataset.cr].reason = t.value;
@@ -639,6 +736,9 @@ document.addEventListener('submit', async e => {
     }
   }
   if (f.id === 'of') await act({ action: 'addOrder', carId: f.dataset.id, seller: g('o-sales'), date: isoOut(g('o-date')), customer: g('o-cust'), price: g('o-price'), eta: isoOut(g('o-eta')) }, btn);
+  if (f.id === 'pf') { const note = g('pnote'); if (!note && !pendingPhotos.length) { toast('請至少寫一段說明或附一張照片'); return; }
+    const r = await act({ action: 'addProgress', id: selOrder, stage: g('pstage'), note, photos: pendingPhotos, push: !!$('#ppush')?.checked }, btn);
+    if (r && r.ok) { pendingPhotos = []; render(); } }
   if (f.id === 'dlv') await act({ action: 'deliver', id: f.dataset.id, date: isoOut(g('d-date')) }, btn);
   if (f.id === 'vf') {
     const visit = { date: isoOut(g('c-date')), sales: g('c-sales'), customer: g('c-cust'), source: g('c-type'), see: $('#c-p-see').checked, trade: $('#c-p-trade').checked,
