@@ -115,10 +115,12 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .form2 label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:700}
 .form2 input,.form2 select{font-weight:400;color:var(--fg);width:100%}
 .form2 .full{grid-column:1/-1}
+.form2 input[type=checkbox]{width:auto;flex:none}
+.modal textarea{width:100%;box-sizing:border-box}
 @media (max-width:420px){.form2{grid-template-columns:1fr}}
 .calc{background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px}
-.modal{position:fixed;inset:0;background:rgba(10,14,22,.55);display:grid;place-items:center;z-index:25;padding:16px}
-.modal .box{background:var(--surface);border-radius:14px;padding:18px;width:460px;max-width:100%;display:flex;flex-direction:column;gap:12px;max-height:88vh;overflow:auto}
+.modal{position:fixed;inset:0;background:rgba(10,14,22,.55);display:grid;grid-template-columns:minmax(0,1fr);place-items:center;z-index:25;padding:16px}
+.modal .box{background:var(--surface);border-radius:14px;padding:18px;width:min(460px,100%);display:flex;flex-direction:column;gap:12px;max-height:88vh;overflow:auto}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:700;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
 .log{display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -154,6 +156,7 @@ th{font-size:12px;color:var(--muted);font-weight:700}
     <button role="tab" data-page="stock">車源表</button>
     <button role="tab" data-page="prep">整備交車</button>
     <button role="tab" data-page="count">每日點車</button>
+    <button role="tab" data-page="service">客戶服務</button>
     <button role="tab" data-page="visits">來客紀錄</button>
     <button role="tab" data-page="board">分點表</button>
     <button role="tab" data-page="bonus" id="nav-bonus" hidden>獎金結算</button>
@@ -165,6 +168,13 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 <div id="lb" class="lightbox" hidden><img id="lbimg" alt="照片放大"></div>
 <div id="modal" class="modal" hidden><div class="box" id="mbox" role="dialog" aria-modal="true"></div></div>
 
+<script>
+// 防呆：這個檔案只能放在 GitHub 的 yongjun-sales，放錯（例如打卡系統 yongjun-punch）會直接顯示警告
+if (location.hostname.endsWith('github.io') && !location.pathname.startsWith('/yongjun-sales/')) {
+  document.addEventListener('DOMContentLoaded', () => { document.body.innerHTML = '<div style="padding:40px 20px;font:16px/1.7 sans-serif;text-align:center;color:#B3261E"><b style="font-size:20px">⚠️ 檔案放錯地方了</b><br>這是「永駿業務系統」的檔案，應該上傳到 GitHub 的 <b>yongjun-sales</b>。<br>請到這個資料夾的 History 把剛才的上傳還原。</div>'; });
+  throw new Error('wrong repo');
+}
+</script>
 <script>
 // ===== 設定 =====
 const LIFF_ID = '2012275132-8PYWlQ0K';
@@ -211,6 +221,8 @@ async function act(payload, busyBtn) {
 let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {}, PROGRESS = [], selOrder = null, pendingPhotos = [];
 let page = 'stock', stockFilter = '庫存中', stockQ = '', boardMonth = '', bonusMonth = '', visQ = '', histDays = 10, draft = null, pendingTrade = null;
 const isBoss = () => D && D.me.isBoss;
+const canAll = () => D && (D.me.isBoss || D.me.isOffice);   // 主管或行政：看全部、可代業務登錄
+const coOpt = () => D.me.isOffice ? '<option value="">公司車</option>' : `<option value="">${esc(D.me.name)}（公司車）</option>`;
 const SALES = () => D.salesNames;
 const ROWS = () => ['公司車', ...SALES()];
 const rowOf = name => SALES().includes(name) ? name : '公司車';
@@ -246,7 +258,7 @@ async function load() {
   const r = await api({ action: 'all' });
   if (!r.ok) { $('#view').innerHTML = `<div class="panel">${esc(r.message)}</div>`; $('#who').textContent = ''; return; }
   D = r; normalize();
-  $('#who').textContent = `${D.me.name}${D.me.en !== D.me.name ? '（' + D.me.en + '）' : ''}・${D.me.isBoss ? '主管' : '業務'}・${D.today}`;
+  $('#who').textContent = `${D.me.name}${D.me.en !== D.me.name ? '（' + D.me.en + '）' : ''}・${D.me.isBoss ? '主管' : D.me.isOffice ? '行政' : '業務'}・${D.today}`;
   $('#nav').hidden = false; $('#nav-bonus').hidden = !isBoss();
   render();
 }
@@ -313,7 +325,7 @@ function carForm(c, opt = {}) {
     <label>認證${sel('f-cert', ['TSI', 'GOO', '需複檢', '–'], c.cert)}</label>
     <label>廠證${sel('f-fc', ['V', '–'], c.fc)}</label>
     <label>鑰匙${sel('f-keys', ['2', '1', '–'], c.keys)}</label>
-    <label>採購${boss ? sel('f-buyer', ['公司', '寄賣', ...SALES()], c.buyer) : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
+    <label>採購${canAll() ? sel('f-buyer', ['公司', '寄賣', ...SALES()], c.buyer) : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
     <label>採購金額${boss || !edit ? `<input type="number" id="f-cost" value="${c.cost ?? ''}" placeholder="例如 520000">` : ''}</label>
     ${boss && edit ? `
     <label>開價<input type="number" id="f-ask" value="${c.ask ?? ''}"></label>
@@ -339,7 +351,7 @@ function orderForm(c) {
   return `<h3>收訂・${esc(label(c))}（${esc(c.plate)}）</h3>
   <div class="calc">開價 <b class="mono">${money(c.ask)}</b>・底價 <b class="mono">${money(c.floor)}</b>・保底獎金 <b class="mono">${money(c.bonus)}</b>・管理 ${esc(c.manager || '—')}</div>
   <form id="of" class="form2" data-id="${c.id}">
-    <label>收訂業務${isBoss() ? `<select id="o-sales"><option value="">${esc(D.me.name)}（公司車）</option>${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
+    <label>收訂業務${canAll() ? `<select id="o-sales">${coOpt()}${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
     <label>收訂日<input type="date" id="o-date" value="${isoIn(D.today)}" required></label>
     <label>客戶稱呼<input type="text" id="o-cust" list="o-vlist" placeholder="王先生" required><datalist id="o-vlist">${seen.map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
     <label>成交價<input type="number" id="o-price" value="${c.ask}" required></label>
@@ -356,24 +368,12 @@ function updCalc(c) {
   el.innerHTML = '只有主管看得到：' + (r.below ? `成交價低於底價 <b class="mono">${money(-r.diff)}</b>，銷售獎金待斟酌${r.buyer ? `；${r.buyer} 沒有採購獎金` : ''}`
     : `${comp ? '公司車沒有銷售獎金' : `銷售獎金 <b class="mono">${money(r.sale)}</b>`}${r.buyer ? `；採購獎金（${r.buyer}）<b class="mono">${money(r.buy)}</b>` : ''}`);
 }
-function orderModal(o) {
-  const c = carById(o.carId), can = isBoss() || o.seller === D.me.en;
-  return `<h3>${esc(label(c))}（${esc(c.plate)}）</h3>
-  <div class="log"><div><span class="muted">收訂</span><span>${esc(o.seller)}・${o.date}</span></div><div><span class="muted">客戶</span><span>${esc(o.cust)}</span></div>
-  ${o.price != null ? `<div><span class="muted">成交價</span><span class="mono">${money(o.price)}</span></div>` : ''}<div><span class="muted">預計交車</span><span>${o.eta || '—'}</span></div></div>
-  ${can ? `<form id="dlv" data-id="${o.id}" class="row" style="background:var(--ok-soft);border-radius:8px;padding:10px">
-      <label class="label" for="d-date">實際交車日</label><input type="date" id="d-date" value="${isoIn(D.today)}" required>
-      <button class="btn pri" type="submit">完成交車</button></form>
-    <p class="small muted" style="margin:0">完成交車：從庫存表移出，分點表交車 +1（不推播），列入交車月份的獎金結算。</p>
-    <div class="row" style="justify-content:space-between"><button class="btn danger" data-cancel="${o.id}">退訂</button><button class="btn" data-mclose>關閉</button></div>`
-    : '<p class="small muted">只有收訂業務或主管可以交車或退訂。</p><div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button></div>'}`;
-}
 
 // ===== 整備交車（第二階段）=====
 const STG = () => D.stages || ['收訂成交', '貸款／尾款', '過戶／領牌', '保養／維修', '可交車'];
-function canReport(o) { const c = carById(o.carId); return isBoss() || o.seller === D.me.en || (c && c.manager === D.me.en); }
+function canReport(o) { const c = carById(o.carId); return canAll() || o.seller === D.me.en || (c && c.manager === D.me.en); }
 function myPrep() {
-  return ORDERS.filter(o => o.status === '已收訂' && (isBoss() || o.seller === D.me.en || carById(o.carId)?.manager === D.me.en))
+  return ORDERS.filter(o => o.status === '已收訂' && (canAll() || o.seller === D.me.en || carById(o.carId)?.manager === D.me.en))
     .sort((a, b) => (b.stage === STG().length - 1) - (a.stage === STG().length - 1) || a.date.localeCompare(b.date));
 }
 const pbar = o => `<div class="bar">${STG().map((s, i) => `<i class="${i <= o.stage ? 'd' : i === o.stage + 1 ? 'a' : ''}"></i>`).join('')}</div>`;
@@ -385,7 +385,7 @@ function renderPrep() {
   const o = ORDERS.find(x => x.id === selOrder);
   return `
   <section class="row" style="justify-content:space-between"><div><h2 style="font-size:18px">整備交車</h2>
-    <div class="small muted">${isBoss() ? '所有整備中的訂單' : '你收訂的車和你管理的車'}・回報會從收訂業務的官方帳號通知客人</div></div></section>
+    <div class="small muted">${canAll() ? '所有整備中的訂單' : '你收訂的車和你管理的車'}・回報會從收訂業務的官方帳號通知客人</div></div></section>
   ${!list.length ? '<div class="panel">目前沒有整備中的訂單。在「車源表」按「收訂」後就會出現在這裡。</div>' : `
   <div class="grid2">
     <aside class="olist">${list.map(m => { const c = carById(m.carId); const stale = lastUpdate(m) && diffD(lastUpdate(m).slice(0, 10), D.today) > 3;
@@ -399,7 +399,7 @@ function renderPrep() {
 function prepDetail(o) {
   const c = carById(o.carId), ups = PROGRESS.filter(p => p.orderId === o.id).sort((a, b) => b.time.localeCompare(a.time));
   const isCo = !SALES().includes(o.seller), oaOk = (D.oaReady || []).includes(o.seller), url = D.customerPage + '?t=' + o.token;
-  const next = Math.min(o.stage + 1, STG().length - 1), can = canReport(o), canDel = isBoss() || o.seller === D.me.en;
+  const next = Math.min(o.stage + 1, STG().length - 1), can = canReport(o), canDel = canAll() || o.seller === D.me.en;
   const msg = `${o.cust}您好，我是永駿車業的${o.seller}，謝謝您的訂購！\n您的愛車整備進度可以在這裡隨時查看：\n${url}\n\n在這個聊天室回覆「綁定 ${o.code}」，之後每一次的整備進度都會用 LINE 通知您喔！`;
   return `<section style="display:flex;flex-direction:column;gap:12px;min-width:0">
     <div class="panel sec">
@@ -425,12 +425,258 @@ function prepDetail(o) {
     <div class="panel sec"><h3 style="font-size:16px">整備紀錄</h3>
       <div class="tl">${ups.map(u => `<div class="it"><b>${STG()[u.stage]}</b> <span class="small muted mono">${esc(u.time.slice(5, 16))}・${esc(u.by)}${u.push ? '・' + esc(u.push) : ''}</span>
         ${u.note ? `<div class="small">${esc(u.note)}</div>` : ''}${u.photos.length ? `<div class="thumbs" style="margin-top:6px">${u.photos.map(p => `<img src="${p}" alt="整備照片" data-zoom loading="lazy">`).join('')}</div>` : ''}</div>`).join('') || '<span class="muted small">尚無紀錄</span>'}</div></div>
-    ${canDel ? `<div class="panel sec"><h3 style="font-size:16px">交車</h3>
-      <form id="dlv" data-id="${o.id}" class="row"><label class="label" for="d-date">實際交車日</label><input type="date" id="d-date" value="${isoIn(D.today)}" required><button class="btn pri" type="submit">完成交車</button></form>
-      <p class="small muted" style="margin:0">完成交車：從庫存表移出，分點表交車 +1（不推播），列入交車月份的獎金結算。</p>
+    ${canDel ? `<div class="panel sec"><h3 style="font-size:16px">完成交車登記</h3>
+      <form id="dlv" data-id="${o.id}" class="form2">
+        <label>實際交車日<input type="date" id="d-date" value="${isoIn(D.today)}" required></label>
+        <label>客戶生日<input type="date" id="d-bd"></label>
+        <label>電話<input type="tel" id="d-tel"></label><label>身分證字號<input type="text" id="d-idn" autocomplete="off"></label>
+        <label class="full">地址<input type="text" id="d-addr"></label>
+        <label>下次驗車日<input type="date" id="d-insp"></label><label>&nbsp;</label>
+        <label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="d-insus"> 任意險跟本公司投保</label>
+        <label>保險公司<input type="text" id="d-insco" placeholder="例如 富邦產險（他家也可以填）"></label>
+        <label>險種<input type="text" id="d-instype" placeholder="例如 乙式＋第三人責任"></label>
+        <label>保險到期日<input type="date" id="d-insexp"></label>
+        <label>&nbsp;</label>
+        <div class="full"><div class="label" style="margin-bottom:6px">贈送券（沒有就留空）</div><div id="d-cps" style="display:flex;flex-direction:column;gap:6px">${couponRow()}${couponRow()}</div>
+          <button type="button" class="btn" data-addcp style="margin-top:6px">＋ 再加一張</button></div>
+        <div class="full row" style="justify-content:space-between"><span class="small muted">保固一個月從實際交車日起算。交車後：從庫存表移出、分點表交車 +1、列入交車月份獎金、加入「客戶服務」。</span><button class="btn pri" type="submit">完成交車</button></div>
+      </form>
       <div><button class="btn danger" data-cancel="${o.id}">退訂</button></div></div>` : ''}
   </section>`;
 }
+function couponRow() { return `<div class="row cp" style="gap:6px"><input type="text" class="cp-t" placeholder="券的內容，例如 免費保養一次" style="flex:1;min-width:150px"><input type="date" class="cp-e" aria-label="到期日"></div>`; }
+function readCoupons(root) { return [...root.querySelectorAll('.cp')].map(r => ({ text: r.querySelector('.cp-t').value.trim(), expire: isoOut(r.querySelector('.cp-e').value) })).filter(c => c.text && c.expire); }
+
+// ===== 客戶服務（2B）=====
+let svTab = 'todo', svQ = '', svSeller = '';
+const SV = () => D.service || { customers: [], coupons: [], contacts: [], remind: {}, holidays: {}, warrantyMonths: 1 };
+function addMonthsS(s, n) { const [y, m, d] = s.split('/').map(Number); const t = new Date(y, m - 1 + n, 1); const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate(); t.setDate(Math.min(d, last)); return fmtD(t); }
+const daysTo = s => diffD(D.today, s);
+function bdShow(bd) { return !bd ? '—' : bd.startsWith('1900/') ? bd.slice(5) : bd; }
+function nextBirthday(bd) { if (!bd) return null; const y = +D.today.slice(0, 4); let s = y + bd.slice(4); if (s < D.today) s = (y + 1) + bd.slice(4); return s; }
+const custById = id => SV().customers.find(c => c['編號'] === id);
+const isCoCust = c => !SALES().includes(c['業務']);
+const canLine = c => c.bound && !isCoCust(c) && (D.oaReady || []).includes(c['業務']);
+function doneKeys() { const k = {}; SV().contacts.forEach(x => { if (x['提醒鍵']) k[x['提醒鍵']] = true; }); return k; }
+function reminders() {
+  const R = SV().remind, out = [], done = doneKeys();
+  const hol = Object.keys(SV().holidays).sort().find(d => d >= D.today);
+  SV().customers.forEach(c => {
+    const id = c['編號'], nm = c['客戶'], push = (o) => { if (!done[o.key]) out.push(Object.assign({ c }, o)); };
+    if (c['來源'] === '系統交車' && c['交車日']) { const we = addMonthsS(c['交車日'], SV().warrantyMonths), d = daysTo(we);
+      if (d >= 0 && d <= R.warranty) push({ key: '保固|' + id, kind: '保固', days: d, title: '交車滿月關心', detail: `保固 ${md(we)} 到期（剩 ${d} 天）`,
+        text: `${nm}您好，愛車開了快一個月，一切都還順利嗎？保固將於 ${we} 到期，若有任何異狀請在這之前告訴我，我們會儘快安排處理。` }); }
+    SV().coupons.filter(q => q['客戶編號'] === id && q['狀態'] === '未使用').forEach(q => { const d = daysTo(q['到期日']);
+      if (d >= 0 && d <= R.coupon) push({ key: '券|' + q['編號'], kind: '優惠券', days: d, title: '贈送券快到期', detail: `${q['內容']}・${md(q['到期日'])} 到期（剩 ${d} 天）`,
+        text: `${nm}您好，提醒您交車贈送的「${q['內容']}」將於 ${q['到期日']} 到期，歡迎回廠使用，直接回覆就能預約時間喔！` }); });
+    const ex = c['保險到期日'];
+    if (c['本公司投保'] === '是' && ex) { const d = daysTo(ex); if (d >= 0 && d <= R.renew) push({ key: '續保|' + id + '|' + ex, kind: '保險', days: d, title: '任意險續保', detail: `${c['保險公司']} ${c['保險類型']}・${md(ex)} 到期（剩 ${d} 天）`,
+        text: `${nm}您好，您的車險${c['保險類型'] ? '（' + c['保險類型'] + '）' : ''}將於 ${ex} 到期，我已幫您準備好續保方案，方便的話回覆我，幫您辦理續保。` }); }
+    else if (c['本公司投保'] !== '是') {
+      if (ex) { const d = daysTo(ex); if (d >= 0 && d <= R.switchIns) push({ key: '轉保|' + id + '|' + ex, kind: '保險', days: d, title: '爭取轉保', detail: `目前 ${c['保險公司'] || '他家'}，${md(ex)} 到期（剩 ${d} 天）`,
+        text: `${nm}您好，您的車險將於 ${ex} 到期，永駿也有代辦任意險，可以幫您比較各家方案，出險時也由我們直接協助處理，有興趣歡迎回覆我！` }); }
+      else push({ key: '邀保|' + id, kind: '保險', days: 999, title: '邀請投保任意險', detail: '還沒在本公司投保，也沒有保險到期日',
+        text: `${nm}您好，愛車的任意險可以交給永駿代辦，出險時由我們直接協助處理，也幫您比較各家方案，有興趣歡迎回覆我！` });
+    }
+    const ins = c['下次驗車日']; if (ins) { const d = daysTo(ins); if (d >= -30 && d <= (R.inspect || 30)) push({ key: '驗車|' + id + '|' + ins, kind: '驗車', days: d, title: '定期驗車', detail: `${md(ins)} ${d < 0 ? '已逾期 ' + (-d) + ' 天' : '到期（剩 ' + d + ' 天）'}${c['車牌'] ? '・' + c['車牌'] : ''}`,
+      text: `${nm}您好，提醒您愛車${c['車牌'] ? '（' + c['車牌'] + '）' : ''}的定期驗車期限是 ${ins}，逾期會被罰款喔！需要我們幫您代驗或先做檢查，直接回覆我就可以安排。` }); }
+    const nb = nextBirthday(c['生日']); if (nb) { const d = daysTo(nb); if (d <= R.birthday) push({ key: '生日|' + id + '|' + nb.slice(0, 4), kind: '生日', days: d, title: '客戶生日', detail: `${md(nb)} 生日${d === 0 ? '（今天）' : `（${d} 天後）`}`, card: true,
+      text: `${nm}，生日快樂！感謝您選擇永駿車業，祝福新的一歲平安順心，行車一路順風。` }); }
+    if (hol) { const d = daysTo(hol); if (d <= R.holiday) push({ key: '節日|' + id + '|' + hol, kind: '節日', days: d, title: SV().holidays[hol] + '祝福', detail: `${md(hol)} ${SV().holidays[hol]}（${d} 天後）`, card: true,
+      text: `${nm}，${SV().holidays[hol]}快樂！感謝您一路以來的支持，祝您與家人佳節愉快、出入平安。` }); }
+  });
+  return out.filter(r => !svSeller || r.c['業務'] === svSeller).sort((a, b) => a.days - b.days);
+}
+const KIND_CLS = { 保固: 'ready', 優惠券: 'active', 保險: 'done', 驗車: 'active', 生日: 'stale', 節日: 'stale' };
+function renderService() {
+  const rs = reminders();
+  let custs = SV().customers.filter(c => !svSeller || c['業務'] === svSeller);
+  if (svQ) { const q = svQ.toLowerCase(); custs = custs.filter(c => [c['客戶'], c['車款'], c['車牌'], c['業務'], c['電話']].join(' ').toLowerCase().includes(q)); }
+  custs.sort((a, b) => b['交車日'].localeCompare(a['交車日']));
+  return `
+  <section class="row" style="justify-content:space-between"><div><h2 style="font-size:18px">客戶服務</h2><div class="small muted">交車後的保固、贈送券、保險、生日與節日關心</div></div>
+    <div class="row">${canAll() ? `<select id="svs" aria-label="業務"><option value="">全部業務</option>${[...new Set(SV().customers.map(c => c['業務']))].map(n => `<option ${n === svSeller ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : ''}
+      <button class="btn" data-act="importcust">匯入 Excel</button><button class="btn acc" data-act="oldcust">＋ 新增舊客人</button></div></section>
+  <nav class="filters"><button class="chip" data-svt="todo" aria-pressed="${svTab === 'todo'}">待辦提醒 ${rs.length}</button><button class="chip" data-svt="list" aria-pressed="${svTab === 'list'}">已交車客戶 ${SV().customers.length}</button></nav>
+  ${svTab === 'todo' ? `<section class="panel">${rs.map(r => `<div class="cnt-row" style="grid-template-columns:70px minmax(0,1fr) auto"><span class="pill ${KIND_CLS[r.kind] || 'done'}" style="text-align:center">${r.kind}</span>
+      <div style="min-width:0"><b>${esc(r.c['客戶'])}</b>・${esc(r.title)} <span class="small muted">（${esc(r.c['業務'])}・${esc(r.c['車款'])}）</span><div class="small muted">${esc(r.detail)}</div></div>
+      <div class="ctl"><button class="btn" data-cust="${r.c['編號']}">客戶資料</button><button class="btn acc" data-rem="${esc(r.key)}">處理</button></div></div>`).join('') || '<p class="muted" style="margin:0">目前沒有待辦，都處理完了。</p>'}</section>
+    <p class="small muted" style="margin:0">提醒規則：保固到期前 ${SV().remind.warranty} 天、贈送券到期前 ${SV().remind.coupon} 天、本公司車險到期前 ${SV().remind.renew} 天、他家車險到期前 ${SV().remind.switchIns} 天、驗車前 ${SV().remind.inspect || 30} 天（處理後自動排下一次）、生日前 ${SV().remind.birthday} 天、節日前 ${SV().remind.holiday} 天。按「處理」可以用 LINE 傳訊息，或標記已用其他方式聯絡。</p>`
+  : `<section class="row"><input type="text" id="svq" placeholder="搜尋客人、車款、車牌、電話" value="${esc(svQ)}" aria-label="搜尋客戶" style="flex:1"></section>
+    <section class="panel" style="padding:0"><div class="tbl-wrap"><table style="min-width:760px;font-size:13.5px"><thead><tr><th>客人</th><th>車款</th><th>業務</th><th>交車日</th><th>保固</th><th>車險</th><th>生日</th><th>LINE</th><th></th></tr></thead>
+    <tbody>${custs.map(c => { const we = addMonthsS(c['交車日'], SV().warrantyMonths), wd = daysTo(we), cps = SV().coupons.filter(q => q['客戶編號'] === c['編號'] && q['狀態'] === '未使用' && q['到期日'] >= D.today).length;
+      return `<tr><td><b>${esc(c['客戶'])}</b>${c['來源'] === '舊客人匯入' ? '<div class="small muted">舊客人</div>' : ''}</td><td>${esc(c['車款'])}<div class="mono small muted">${esc(c['車牌'])}</div></td><td>${esc(c['業務'])}</td>
+      <td class="mono">${c['交車日']}</td><td>${c['來源'] === '系統交車' ? (wd >= 0 ? `<span class="pill ready">剩 ${wd} 天</span>` : '<span class="pill done">已過</span>') : '—'}</td>
+      <td class="small">${c['本公司投保'] === '是' ? `<span class="pill ready">本公司</span> ${c['保險到期日'] ? md(c['保險到期日']) : ''}` : c['保險到期日'] ? `他家 ${md(c['保險到期日'])}` : '<span class="muted">—</span>'}</td>
+      <td class="mono small">${c['生日'] ? md(c['生日']) : '—'}</td><td>${isCoCust(c) ? '<span class="muted small">公司車</span>' : c.bound ? '<span class="pill ready">已綁定</span>' : '<span class="pill stale">未綁定</span>'}</td>
+      <td><button class="btn" data-cust="${c['編號']}">查看${cps ? `・券 ${cps}` : ''}</button></td></tr>`; }).join('') || '<tr><td colspan="9" class="muted">還沒有已交車客戶</td></tr>'}</tbody></table></div></section>`}`;
+}
+function custModal(c) {
+  const id = c['編號'], we = addMonthsS(c['交車日'], SV().warrantyMonths), cps = SV().coupons.filter(q => q['客戶編號'] === id);
+  const logs = SV().contacts.filter(k => k['客戶編號'] === id).sort((a, b) => b['時間'].localeCompare(a['時間']));
+  const url = D.customerPage + '?t=' + c['客戶頁代碼'];
+  const bindMsg = `${c['客戶']}您好，我是永駿車業的${c['業務']}！之後愛車的保養、保固和優惠都可以在這裡收到通知。\n在這個聊天室回覆「綁定 ${c['綁定碼']}」就完成設定囉！\n\n我的愛車：${url}`;
+  return `<h3>${esc(c['客戶'])}・${esc(c['車款'])}</h3>
+  <div class="log"><div><span class="muted">業務</span><span>${esc(c['業務'])}</span></div><div><span class="muted">車牌</span><span class="mono">${esc(c['車牌']) || '—'}</span></div>
+    <div><span class="muted">交車日</span><span class="mono">${c['交車日']}${c['來源'] === '系統交車' ? `・保固至 ${we}（${daysTo(we) >= 0 ? '剩 ' + daysTo(we) + ' 天' : '已過'}）` : ''}</span></div>
+    <div><span class="muted">電話</span><span class="mono">${c['電話'] ? `<a href="tel:${esc(c['電話'])}">${esc(c['電話'])}</a>` : '—'}</span></div>
+    <div><span class="muted">生日</span><span class="mono">${bdShow(c['生日'])}</span></div>
+    ${c['身分證'] ? `<div><span class="muted">身分證</span><span class="mono">${esc(c['身分證'])}</span></div>` : ''}
+    ${c['地址'] ? `<div><span class="muted">地址</span><span>${esc(c['地址'])}</span></div>` : ''}
+    ${c['年份'] || c['價格'] ? `<div><span class="muted">年份／價格</span><span class="mono">${esc(c['年份']) || '—'}・${c['價格'] ? money(+c['價格']) : '—'}</span></div>` : ''}
+    <div><span class="muted">下次驗車</span><span class="mono">${c['下次驗車日'] ? c['下次驗車日'] + `（${daysTo(c['下次驗車日']) >= 0 ? '剩 ' + daysTo(c['下次驗車日']) + ' 天' : '已逾期'}）` : '—'}</span></div>
+    <div><span class="muted">車險</span><span>${c['本公司投保'] === '是' ? '本公司代辦・' : ''}${esc(c['保險公司']) || '—'} ${esc(c['保險類型'])} ${c['保險到期日'] ? '・到期 ' + c['保險到期日'] : ''}</span></div>
+    ${c['備註'] ? `<div><span class="muted">備註</span><span>${esc(c['備註'])}</span></div>` : ''}</div>
+  <div class="row"><button class="btn" data-editcust="${id}">修改資料</button><a class="btn" href="${url}" target="_blank" rel="noopener">看客戶畫面</a>${canLine(c) ? `<button class="btn acc" data-msg="${id}">傳 LINE 訊息</button>` : ''}</div>
+  ${isCoCust(c) ? '<div class="bind yes small">公司車不發 LINE 通知</div>' : c.bound ? '' : `<div class="bind no"><b>客人還沒綁定 LINE</b><span>複製下面訊息貼到你的官方帳號聊天室，客人回覆綁定碼後就能收到通知。</span><textarea id="cbind" readonly rows="5">${esc(bindMsg.replace(/\\n/g, '\n'))}</textarea><div><button class="btn pri" data-copy="cbind">複製訊息</button></div></div>`}
+  <div class="sec"><div class="label">贈送券</div>
+    ${cps.map(q => { const d = daysTo(q['到期日']); return `<div class="row small" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:6px"><span><b>${esc(q['內容'])}</b> ${q['狀態'] === '已使用' ? `<span class="muted">已使用 ${q['使用日']}</span>` : d < 0 ? `<span class="muted">已過期 ${q['到期日']}</span>` : `<span style="color:${d <= 45 ? 'var(--warn)' : 'var(--muted)'}">${q['到期日']} 到期（剩 ${d} 天）</span>`}</span>
+      ${q['狀態'] === '未使用' && d >= 0 ? `<button class="btn" data-usecp="${q['編號']}">標記已使用</button>` : ''}</div>`; }).join('') || '<span class="small muted">沒有贈送券</span>'}
+    <form id="addcp" data-id="${id}" class="row" style="gap:6px"><input type="text" id="ncp-t" placeholder="新增券的內容" style="flex:1;min-width:140px"><input type="date" id="ncp-e" aria-label="到期日"><button class="btn" type="submit">＋ 新增</button></form></div>
+  <div class="sec"><div class="label">互動紀錄</div><div class="log">${logs.map(k => `<div><span class="mono muted">${k['時間'].slice(5, 10)}</span><span><b>${esc(k['類型'])}</b>・${esc(k['內容'])}${k['LINE'] ? ` <span class="small muted">（LINE${k['結果'] === '失敗' ? '・失敗' : ''}）</span>` : ''}${k.imageUrl ? `<div class="thumbs" style="margin-top:4px"><img src="${k.imageUrl}" alt="附圖" data-zoom></div>` : ''}</span></div>`).join('') || '<span class="muted">尚無紀錄</span>'}</div></div>
+  <div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button></div>`;
+}
+function msgModal(c, r) {
+  const ok = canLine(c);
+  return `<h3>${r ? esc(r.title) : '傳訊息'}・${esc(c['客戶'])}</h3>
+  ${r ? `<div class="small muted">${esc(r.detail)}</div>` : ''}
+  <form id="mf" data-id="${c['編號']}" data-key="${r ? esc(r.key) : ''}" data-type="${r ? esc(r.kind) : '訊息'}" class="sec">
+    ${r && r.card || !r ? `<label class="drop" for="mimg">＋ 附一張圖（賀卡、優惠圖，選填）<input id="mimg" type="file" accept="image/*"></label><div class="thumbs" id="mthumb"></div>` : ''}
+    <label class="label" for="mtext">訊息內容（可以修改）</label><textarea id="mtext" rows="6">${esc(r ? r.text : '')}</textarea>
+    <div class="row" style="justify-content:space-between">
+      ${r ? `<button type="button" class="btn" data-markdone="${esc(r.key)}" data-cid="${c['編號']}" data-kind="${esc(r.kind)}">已用其他方式聯絡</button>` : '<span></span>'}
+      <button class="btn acc" type="submit" ${ok ? '' : 'disabled'}>用 LINE 傳送</button></div>
+    ${ok ? '' : `<p class="small muted" style="margin:0">${isCoCust(c) ? '公司車不發 LINE 通知。' : !c.bound ? '客人還沒綁定 LINE，可以在客戶資料裡複製綁定訊息給他。' : '這位業務的官方帳號還沒設定金鑰。'}電話或當面聯絡後，按「已用其他方式聯絡」。</p>`}
+  </form>`;
+}
+function oldCustForm() {
+  return `<h3>新增舊客人</h3><p class="small muted" style="margin:0">系統上線前已交車的客人，加入後一樣會有車險、生日、節日提醒。</p>
+  <form id="ocf" class="form2">
+    ${canAll() ? `<label>業務<select id="oc-s">${coOpt()}${SALES().map(s => `<option>${s}</option>`).join('')}</select></label>` : `<label>業務<input type="text" value="${esc(D.me.en)}" disabled></label>`}
+    <label>客戶稱呼<input type="text" id="oc-n" required placeholder="王先生"></label>
+    <label>車款<input type="text" id="oc-car" required placeholder="2019 TOYOTA RAV4"></label>
+    <label>車牌<input type="text" id="oc-p"></label>
+    <label>交車日<input type="date" id="oc-d" required></label>
+    <label>生日<input type="date" id="oc-b"></label>
+    <label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="oc-us"> 任意險跟本公司投保</label>
+    <label>保險公司<input type="text" id="oc-ic"></label><label>險種<input type="text" id="oc-it"></label>
+    <label>電話<input type="tel" id="oc-tel"></label><label>身分證字號<input type="text" id="oc-idn" autocomplete="off"></label>
+    <label class="full">地址<input type="text" id="oc-addr"></label>
+    <label>年份<input type="text" id="oc-yr" placeholder="2019"></label><label>價格<input type="number" id="oc-pr"></label>
+    <label>下次驗車日<input type="date" id="oc-insp"></label><label>&nbsp;</label>
+    <label>保險到期日<input type="date" id="oc-ie"></label><label>備註<input type="text" id="oc-note"></label>
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">新增</button></div></form>`;
+}
+function editCustForm(c) {
+  return `<h3>修改・${esc(c['客戶'])}</h3><form id="ecf" data-id="${c['編號']}" class="form2">
+    <label>客戶稱呼<input type="text" id="ec-n" value="${esc(c['客戶'])}"></label><label>車款<input type="text" id="ec-car" value="${esc(c['車款'])}"></label>
+    <label>車牌<input type="text" id="ec-p" value="${esc(c['車牌'])}"></label><label>生日<input type="date" id="ec-b" value="${c['生日'] ? isoIn(c['生日']) : ''}"></label>
+    <label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="ec-us" ${c['本公司投保'] === '是' ? 'checked' : ''}> 任意險跟本公司投保</label>
+    <label>保險公司<input type="text" id="ec-ic" value="${esc(c['保險公司'])}"></label><label>險種<input type="text" id="ec-it" value="${esc(c['保險類型'])}"></label>
+    <label>電話<input type="tel" id="ec-tel" value="${esc(c['電話'])}"></label><label>身分證字號<input type="text" id="ec-idn" value="${esc(c['身分證'])}" autocomplete="off"></label>
+    <label class="full">地址<input type="text" id="ec-addr" value="${esc(c['地址'])}"></label>
+    <label>年份<input type="text" id="ec-yr" value="${esc(c['年份'])}" placeholder="2019"></label><label>價格<input type="number" id="ec-pr" value="${esc(c['價格'])}"></label>
+    <label>下次驗車日<input type="date" id="ec-insp" value="${c['下次驗車日'] ? isoIn(c['下次驗車日']) : ''}"></label><label>&nbsp;</label>
+    <label>保險到期日<input type="date" id="ec-ie" value="${c['保險到期日'] ? isoIn(c['保險到期日']) : ''}"></label><label>備註<input type="text" id="ec-note" value="${esc(c['備註'])}"></label>
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">儲存</button></div></form>`;
+}
+// ===== 舊客人 Excel 匯入 =====
+let impRows = null, impErrs = [];
+const IMP_COLS = [   // [欄位, 範本標題, 可以接受的其他標題]
+  ['seller', '業務', ['負責業務', '業務員']], ['name', '客戶姓名', ['姓名', '客戶', '客戶名稱']], ['idNo', '身分證字號', ['身分證', '身份證字號', '身份證']],
+  ['phone', '電話', ['手機', '聯絡電話', '手機號碼']], ['birthday', '生日', ['出生日期', '出生年月日']], ['address', '地址', ['通訊地址', '戶籍地址']],
+  ['delivered', '購車日期', ['交車日', '交車日期', '購買日期']], ['car', '車型', ['車款', '車型/年份', '車型年份', '廠牌車型']], ['year', '年份', ['出廠年份', '年式', '出廠年月']],
+  ['plate', '車牌', ['車牌號碼']], ['price', '價格', ['成交價', '售價', '成交金額']], ['hasIns', '有無保險', ['保險', '有/無保險', '是否有保險']],
+  ['insCompany', '保險公司', []], ['insType', '險種', ['保險類型', '保險種類']], ['insWithUs', '本公司投保', ['本公司代辦', '在本公司投保']],
+  ['insExpire', '保險到期日', ['保險日期', '保險到期', '保險到期日期']], ['inspect', '下次驗車日', ['驗車日期', '驗車日', '下次驗車日期', '驗車']], ['note', '備註', []]];
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = () => rej(new Error('Excel 工具載入失敗，請檢查網路')); document.head.appendChild(sc); });
+}
+function downloadTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([IMP_COLS.map(c => c[1]), ['Jason', '王大明', 'A123456789', '0912345678', '1980/03/05', '台中市南區文心南路1號', '2023/03/05', 'TOYOTA RAV4', '2019', 'ABC-1234', 780000, '有', '富邦產險', '甲式', '是', '2027/03/05', '2027/03/05', '']]);
+  ws['!cols'] = IMP_COLS.map(c => ({ wch: c[1] === '地址' ? 28 : 13 }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '舊客人'); XLSX.writeFile(wb, '舊客人匯入範本.xlsx');
+}
+const normH = h => String(h || '').replace(/[（(][^)）]*[)）]/g, '').replace(/[\s*＊:：]/g, '').replace(/身份/g, '身分');
+function impDate(v, bday) {
+  if (v == null || v === '') return '';
+  const p2 = n => String(n).padStart(2, '0');
+  if (typeof v === 'number') {
+    if (v >= 19000101 && v <= 21001231) { const t = String(Math.round(v)); return `${t.slice(0, 4)}/${t.slice(4, 6)}/${t.slice(6, 8)}`; }
+    if (v >= 1000000 && v <= 1991231) { const t = String(Math.round(v)).padStart(7, '0'); return `${+t.slice(0, 3) + 1911}/${t.slice(3, 5)}/${t.slice(5, 7)}`; }
+    const o = XLSX.SSF.parse_date_code(v); return o ? `${o.y}/${p2(o.m)}/${p2(o.d)}` : null;
+  }
+  let t = String(v).trim().replace(/^民國/, '').replace(/[年月]/g, '/').replace(/[日號]/g, '').replace(/[.\-\s]+/g, '/').replace(/\/+$/, '');
+  if (/^\d{7,8}$/.test(t)) t = t.length === 8 ? `${t.slice(0, 4)}/${t.slice(4, 6)}/${t.slice(6)}` : `${t.slice(0, 3)}/${t.slice(3, 5)}/${t.slice(5)}`;
+  const a = t.split('/').map(Number);
+  if (a.length === 2 && bday && a.every(Boolean)) return `1900/${p2(a[0])}/${p2(a[1])}`;
+  if (a.length !== 3 || a.some(x => !x)) return null;
+  let [y, m, d] = a; if (y < 1000) y += 1911;
+  if (m > 12 || d > 31) return null;
+  return `${y}/${p2(m)}/${p2(d)}`;
+}
+async function readImport(file) {
+  await loadXLSX();
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+  const names = IMP_COLS.find(c => c[0] === 'name'), isName = h => [names[1], ...names[2]].includes(normH(h));
+  const hi = aoa.slice(0, 10).findIndex(r => r.some(isName));
+  if (hi < 0) throw new Error('找不到標題列，第一列要有「客戶姓名」等欄位名稱（可以先下載範本）');
+  const map = {}; aoa[hi].forEach((h, j) => { const n = normH(h); const c = IMP_COLS.find(c => c[1] === n || c[2].includes(n)); if (c && !(c[0] in map)) map[c[0]] = j; });
+  const rows = [], errs = [];
+  aoa.slice(hi + 1).forEach((r, i) => {
+    if (!r.some(x => String(x).trim())) return;
+    const o = { r: hi + i + 2 }, bad = [];
+    IMP_COLS.forEach(([k]) => { if (k in map) o[k] = r[map[k]]; });
+    ['birthday', 'delivered', 'insExpire', 'inspect'].forEach(k => { if (k in o) { const v = impDate(o[k], k === 'birthday'); if (v === null) { bad.push(IMP_COLS.find(c => c[0] === k)[1] + '看不懂「' + o[k] + '」'); o[k] = ''; } else o[k] = v; } });
+    ['seller', 'name', 'idNo', 'phone', 'address', 'car', 'year', 'plate', 'price', 'hasIns', 'insCompany', 'insType', 'insWithUs', 'note'].forEach(k => { o[k] = String(o[k] ?? '').trim(); });
+    o.phone = o.phone.replace(/[^\d#+\-]/g, ''); if (/^9\d{8}$/.test(o.phone)) o.phone = '0' + o.phone;
+    if (!o.name) bad.push('缺客戶姓名'); if (!o.car) bad.push('缺車型'); if (!o.delivered && !bad.some(b => b.startsWith('購車日期'))) bad.push('缺購車日期');
+    if (bad.length) errs.push({ r: o.r, name: o.name, reason: bad.join('、') }); else rows.push(o);
+  });
+  return { rows, errs, missing: IMP_COLS.filter(c => !(c[0] in map)).map(c => c[1]) };
+}
+function importModal(info) {
+  const cell = v => `<td>${esc(v) || '<span class="muted">—</span>'}</td>`;
+  return `<h3>匯入舊客人（Excel）</h3>
+  <p class="small muted" style="margin:0">第一列放欄位名稱。必填：客戶姓名、購車日期、車型。${canAll() ? '「業務」填 Jason／Devan／Jerry 或 公司，空白算公司車。' : '匯入的客人都會算在你名下。'}日期可以寫 2023/3/5、2023-03-05 或民國 112/3/5。驗車日填「下次驗車日」，處理完提醒會自動排下一次。</p>
+  <div class="row"><button class="btn" data-act="tpl">下載範本</button><label class="btn" for="impf" style="cursor:pointer">選擇 Excel 檔<input id="impf" type="file" accept=".xlsx,.xls,.csv" hidden></label></div>
+  ${info ? `<div class="panel" style="padding:10px"><b>可匯入 ${info.rows.length} 位</b>${info.errs.length ? `・<span style="color:var(--warn)">${info.errs.length} 列有問題，不會匯入</span>` : ''}
+    ${info.missing.length ? `<div class="small muted">沒有這些欄位（會留空）：${info.missing.join('、')}</div>` : ''}
+    ${info.errs.length ? `<div class="small" style="margin-top:6px">${info.errs.slice(0, 30).map(e => `第 ${e.r} 列 ${esc(e.name)}：${esc(e.reason)}`).join('<br>')}${info.errs.length > 30 ? '<br>…' : ''}</div>` : ''}</div>
+    ${info.rows.length ? `<div class="tbl-wrap" style="max-height:260px;overflow:auto"><table class="small" style="min-width:640px;white-space:nowrap"><thead><tr><th>列</th><th>業務</th><th>客戶</th><th>電話</th><th>車型</th><th>購車日</th><th>保險到期</th><th>下次驗車</th></tr></thead><tbody>
+      ${info.rows.slice(0, 50).map(o => `<tr><td class="mono">${o.r}</td>${cell(canAll() ? o.seller || '公司' : D.me.en)}${cell(o.name)}${cell(o.phone)}${cell(o.car)}${cell(o.delivered)}${cell(o.insExpire)}${cell(o.inspect)}</tr>`).join('')}</tbody></table></div>
+      ${info.rows.length > 50 ? `<div class="small muted">只顯示前 50 位</div>` : ''}` : ''}` : ''}
+  <div id="impres"></div>
+  <div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button>${info && info.rows.length ? `<button class="btn acc" data-act="doimport">確認匯入 ${info.rows.length} 位</button>` : ''}</div>`;
+}
+async function doImport(btn) {
+  if (!impRows || !impRows.length) return;
+  btn.disabled = true; let added = 0, skipped = [];
+  try {
+    for (let i = 0; i < impRows.length; i += 200) {
+      btn.textContent = `匯入中… ${Math.min(i + 200, impRows.length)}/${impRows.length}`;
+      const r = await api({ action: 'importCustomers', rows: impRows.slice(i, i + 200) });
+      if (!r.ok) { toast(r.message || '匯入失敗'); break; }
+      added += r.added; skipped = skipped.concat(r.skipped || []);
+    }
+  } catch (e) { toast('連線失敗，請再試一次'); }
+  impRows = null;
+  await load();
+  openModal(`<h3>匯入完成</h3><p><b>新增 ${added} 位客人</b>${skipped.length ? `，略過 ${skipped.length} 筆：` : ''}</p>
+    ${skipped.length ? `<div class="small" style="max-height:300px;overflow:auto">${skipped.map(e => `第 ${e.r} 列 ${esc(e.name || '')}：${esc(e.reason)}`).join('<br>')}</div>` : ''}
+    <p class="small muted" style="margin:0">匯入的客人在「已交車客戶」，到期的保險、驗車、生日會出現在待辦提醒。</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn pri" data-mclose>好</button></div>`);
+}
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'impf' || !e.target.files[0]) return;
+  try { const info = await readImport(e.target.files[0]); impRows = info.rows; openModal(importModal(info)); }
+  catch (err) { toast(err.message || '讀不到這個檔案'); }
+});
+let msgImage = null;
+
 function compress(file) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onerror = rej; r.onload = () => { const img = new Image(); img.onerror = rej; img.onload = () => {
     const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
@@ -455,7 +701,7 @@ function renderCount() {
   const cars = CARS.filter(inLot).sort((a, b) => a.inDate.localeCompare(b.inDate));
   const n = { 在店: 0, 外出: 0, 找不到: 0 }; cars.forEach(c => n[draft[c.id].s]++);
   const days = []; for (let i = histDays - 1; i >= 0; i--) days.push(addD(today, -i));
-  const can = D.me.isSales || isBoss();
+  const can = D.me.isSales || canAll();
   return `
   <section class="row" style="justify-content:space-between">
     <div><h2 style="font-size:18px">文中店 每日點車</h2><div class="small muted">值班業務下班前確認每台車是否在店</div></div>
@@ -504,7 +750,7 @@ function visitForm(pre) {
   return `<h3>登記來店客人</h3>
   <form id="vf" class="form2">
     <label>日期<input type="date" id="c-date" value="${isoIn(D.today)}" required></label>
-    <label>接待業務${isBoss() ? `<select id="c-sales"><option value="">${esc(D.me.name)}</option>${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
+    <label>接待業務${canAll() ? `<select id="c-sales"><option value="">${esc(D.me.name)}</option>${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
     <label>客戶稱呼<input type="text" id="c-cust" placeholder="陳先生" required></label>
     <label>來源<select id="c-type">${D.sources.map(x => `<option>${x}</option>`).join('')}</select></label>
     <div class="full"><div class="label" style="margin-bottom:6px">來意（可複選）</div>
@@ -664,7 +910,7 @@ function render() {
   if (page === 'bonus' && !isBoss()) page = 'stock';
   document.querySelectorAll('[data-page]').forEach(b => b.setAttribute('aria-selected', b.dataset.page === page));
   const v = $('#view');
-  v.innerHTML = page === 'stock' ? renderStock() : page === 'prep' ? renderPrep() : page === 'count' ? renderCount() : page === 'visits' ? renderVisits() : page === 'board' ? renderBoard() : renderBonus();
+  v.innerHTML = page === 'stock' ? renderStock() : page === 'prep' ? renderPrep() : page === 'service' ? renderService() : page === 'count' ? renderCount() : page === 'visits' ? renderVisits() : page === 'board' ? renderBoard() : renderBonus();
   v.style.cssText = 'display:flex;flex-direction:column;gap:14px';
   watermark();
 }
@@ -686,6 +932,18 @@ document.addEventListener('click', async e => {
   if (ds.act === 'base') { const y = boardMonth.slice(0, 4), B = {}; D.base.filter(b => b['年度'] === y).forEach(b => B[b['列']] = b); openModal(`<h3>${y} 年度基準（上線前累計）</h3><p class="small muted" style="margin:0">系統上線（${START}）之前的年度累計數字，會加進分點表的「年度」欄。</p>` + numTable('basef', ROWS(), (r, k) => (B[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
   if (ds.edit) { openModal(carForm(carById(ds.edit))); return; }
   if (ds.order) { const c = carById(ds.order); openModal(orderForm(c)); updCalc(c); $('#o-price').addEventListener('input', () => updCalc(c)); $('#o-sales') && $('#o-sales').addEventListener('change', () => updCalc(c)); return; }
+  if (ds.addcp !== undefined) { $('#d-cps').insertAdjacentHTML('beforeend', couponRow()); return; }
+  if (ds.svt) { svTab = ds.svt; render(); return; }
+  if (ds.act === 'oldcust') { openModal(oldCustForm()); return; }
+  if (ds.act === 'importcust') { impRows = null; openModal(importModal()); return; }
+  if (ds.act === 'tpl') { await loadXLSX(); downloadTemplate(); return; }
+  if (ds.act === 'doimport') { await doImport(t); return; }
+  if (ds.cust) { openModal(custModal(custById(ds.cust))); return; }
+  if (ds.editcust) { openModal(editCustForm(custById(ds.editcust))); return; }
+  if (ds.msg) { msgImage = null; openModal(msgModal(custById(ds.msg))); return; }
+  if (ds.rem) { const r = reminders().find(x => x.key === ds.rem); if (r) { msgImage = null; openModal(msgModal(r.c, r)); } return; }
+  if (ds.markdone) { await act({ action: 'logContact', id: ds.cid, key: ds.markdone, type: ds.kind, text: ($('#mtext')?.value.trim() || '') ? '其他方式聯絡：' + $('#mtext').value.trim().slice(0, 80) : '已用其他方式聯絡' }, t); return; }
+  if (ds.usecp) { const q = SV().coupons.find(x => x['編號'] === ds.usecp); const r = await act({ action: 'useCoupon', id: ds.usecp }, t); if (r && r.ok && q) openModal(custModal(custById(q['客戶編號']))); return; }
   if (ds.prepgo) { page = 'prep'; selOrder = ds.prepgo; pendingPhotos = []; render(); window.scrollTo(0, 0); return; }
   if (ds.sel) { selOrder = ds.sel; pendingPhotos = []; render(); return; }
   if (ds.copy) { const el = $('#' + ds.copy); el.select(); el.setSelectionRange(0, 99999); let ok = false; try { await navigator.clipboard.writeText(el.value); ok = true; } catch (x) { try { ok = document.execCommand('copy'); } catch (y) {} } toast(ok ? '已複製' : '請長按文字框手動複製'); return; }
@@ -703,12 +961,14 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('input', e => {
   const id = e.target.id;
-  if (id === 'sq' || id === 'vq') { if (id === 'sq') stockQ = e.target.value; else visQ = e.target.value; const pos = e.target.selectionStart; render(); const s = $('#' + id); s.focus(); s.setSelectionRange(pos, pos); }
+  if (id === 'sq' || id === 'vq' || id === 'svq') { if (id === 'sq') stockQ = e.target.value; else if (id === 'vq') visQ = e.target.value; else svQ = e.target.value; const pos = e.target.selectionStart; render(); const s = $('#' + id); s.focus(); s.setSelectionRange(pos, pos); }
 });
 document.addEventListener('change', async e => {
   const t = e.target, id = t.id;
   if (id === 'bm' || id === 'vm') { boardMonth = t.value; render(); }
   if (id === 'bmon') { bonusMonth = t.value; render(); }
+  if (id === 'svs') { svSeller = t.value; render(); }
+  if (id === 'mimg' && t.files[0]) { try { msgImage = await compress(t.files[0]); $('#mthumb').innerHTML = `<img src="${msgImage}" alt="附圖">`; } catch (x) { toast('圖片讀取失敗'); } }
   if (id === 'pphoto') { const files = [...t.files].slice(0, 8 - pendingPhotos.length); toast('照片處理中…');
     for (const f of files) { try { pendingPhotos.push(await compress(f)); } catch (x) {} }
     $('#pthumbs').innerHTML = pendingPhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join(''); toast(`已選 ${pendingPhotos.length} 張照片`); }
@@ -739,7 +999,17 @@ document.addEventListener('submit', async e => {
   if (f.id === 'pf') { const note = g('pnote'); if (!note && !pendingPhotos.length) { toast('請至少寫一段說明或附一張照片'); return; }
     const r = await act({ action: 'addProgress', id: selOrder, stage: g('pstage'), note, photos: pendingPhotos, push: !!$('#ppush')?.checked }, btn);
     if (r && r.ok) { pendingPhotos = []; render(); } }
-  if (f.id === 'dlv') await act({ action: 'deliver', id: f.dataset.id, date: isoOut(g('d-date')) }, btn);
+  if (f.id === 'dlv') await act({ action: 'deliver', id: f.dataset.id, date: isoOut(g('d-date')), service: { birthday: isoOut(g('d-bd')), insWithUs: $('#d-insus').checked,
+    insCompany: g('d-insco'), insType: g('d-instype'), insExpire: isoOut(g('d-insexp')), coupons: readCoupons(f),
+    phone: g('d-tel'), idNo: g('d-idn'), address: g('d-addr'), inspect: isoOut(g('d-insp')) } }, btn);
+  if (f.id === 'ocf') await act({ action: 'addCustomer', customer: { seller: g('oc-s'), name: g('oc-n'), car: g('oc-car'), plate: g('oc-p'), delivered: isoOut(g('oc-d')),
+    birthday: isoOut(g('oc-b')), insWithUs: $('#oc-us').checked, insCompany: g('oc-ic'), insType: g('oc-it'), insExpire: isoOut(g('oc-ie')), note: g('oc-note'),
+    phone: g('oc-tel'), idNo: g('oc-idn'), address: g('oc-addr'), year: g('oc-yr'), price: g('oc-pr'), inspect: isoOut(g('oc-insp')) } }, btn);
+  if (f.id === 'ecf') await act({ action: 'updateCustomer', id: f.dataset.id, fields: { '客戶': g('ec-n'), '車款': g('ec-car'), '車牌': g('ec-p'), '生日': isoOut(g('ec-b')),
+    '本公司投保': $('#ec-us').checked ? '是' : '否', '保險公司': g('ec-ic'), '保險類型': g('ec-it'), '保險到期日': isoOut(g('ec-ie')), '備註': g('ec-note'),
+    '電話': g('ec-tel'), '身分證': g('ec-idn'), '地址': g('ec-addr'), '年份': g('ec-yr'), '價格': g('ec-pr'), '下次驗車日': isoOut(g('ec-insp')) } }, btn);
+  if (f.id === 'addcp') { const cid = f.dataset.id; const r = await act({ action: 'addCoupon', id: cid, text: g('ncp-t'), expire: isoOut(g('ncp-e')) }, btn); if (r && r.ok) openModal(custModal(custById(cid))); }
+  if (f.id === 'mf') await act({ action: 'sendMessage', id: f.dataset.id, key: f.dataset.key, type: f.dataset.type, text: g('mtext'), image: msgImage || '' }, btn);
   if (f.id === 'vf') {
     const visit = { date: isoOut(g('c-date')), sales: g('c-sales'), customer: g('c-cust'), source: g('c-type'), see: $('#c-p-see').checked, trade: $('#c-p-trade').checked,
       carIds: [...document.querySelectorAll('input[name="c-car"]:checked')].map(x => x.value), tradeCar: g('t-car'), tradeYear: g('t-year'), tradeKm: g('t-km'), tradeAsk: g('t-ask'), note: g('c-note') };
