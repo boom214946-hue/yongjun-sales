@@ -46,6 +46,7 @@ button{cursor:pointer}
 .btn.danger{color:var(--warn);border-color:var(--warn)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap}
+.chip:has(input:checked){background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .filters{display:flex;gap:6px;flex-wrap:wrap}
 .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
@@ -129,6 +130,16 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .grid2{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;align-items:start}
 @media (max-width:820px){.grid2{grid-template-columns:1fr}}
 .olist{display:flex;flex-direction:column;gap:8px}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.fact{background:var(--surface2);border-radius:8px;padding:10px 12px;min-width:0}.fact .label{font-size:12px}
+.fact .v{font-family:var(--f-mono);font-size:17px;font-weight:600;line-height:1.35}
+.fact.key{background:var(--ink);color:var(--bg)}.fact.key .label{color:inherit;opacity:.75}
+@media (max-width:700px){.facts{grid-template-columns:1fr 1fr}}
+.li{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
+.li:first-of-type{border-top:0}
+.tl2{display:flex;flex-direction:column}.tl2 .it{padding:10px 0;border-top:1px solid var(--line)}.tl2 .it:first-child{border-top:0}
+.svgrid .back{display:none}
+@media (max-width:820px){.svgrid.picked .olist,.svgrid.picked .olist-h{display:none}.svgrid:not(.picked) .cdetail{display:none}.svgrid .back{display:inline-flex}}
 .ocard{text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;width:100%}
 .ocard[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .bar{display:flex;gap:3px}.bar i{flex:1;height:7px;border-radius:2px;background:var(--line)}.bar i.d{background:var(--ok)}.bar i.a{background:var(--accent)}
@@ -154,11 +165,11 @@ th{font-size:12px;color:var(--muted);font-weight:700}
   </header>
   <nav class="pages" role="tablist" id="nav" hidden>
     <button role="tab" data-page="stock">車源表</button>
-    <button role="tab" data-page="prep">整備交車</button>
     <button role="tab" data-page="count">每日點車</button>
-    <button role="tab" data-page="service">客戶服務</button>
-    <button role="tab" data-page="visits">來客紀錄</button>
     <button role="tab" data-page="board">分點表</button>
+    <button role="tab" data-page="visits">來客紀錄</button>
+    <button role="tab" data-page="prep">整備交車</button>
+    <button role="tab" data-page="service">客戶服務</button>
     <button role="tab" data-page="bonus" id="nav-bonus" hidden>獎金結算</button>
   </nav>
   <main id="view"><div class="loading">讀取資料中…</div></main>
@@ -448,7 +459,7 @@ function couponRow() { return `<div class="row cp" style="gap:6px"><input type="
 function readCoupons(root) { return [...root.querySelectorAll('.cp')].map(r => ({ text: r.querySelector('.cp-t').value.trim(), expire: isoOut(r.querySelector('.cp-e').value) })).filter(c => c.text && c.expire); }
 
 // ===== 客戶服務（2B）=====
-let svTab = 'todo', svQ = '', svSeller = '';
+let svTab = 'todo', svQ = '', svSeller = '', selCust = null, notePhotos = [];
 const SV = () => D.service || { customers: [], coupons: [], contacts: [], remind: {}, holidays: {}, warrantyMonths: 1 };
 function addMonthsS(s, n) { const [y, m, d] = s.split('/').map(Number); const t = new Date(y, m - 1 + n, 1); const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate(); t.setDate(Math.min(d, last)); return fmtD(t); }
 const daysTo = s => diffD(D.today, s);
@@ -480,6 +491,9 @@ function reminders() {
     }
     const ins = c['下次驗車日']; if (ins) { const d = daysTo(ins); if (d >= -30 && d <= (R.inspect || 30)) push({ key: '驗車|' + id + '|' + ins, kind: '驗車', days: d, title: '定期驗車', detail: `${md(ins)} ${d < 0 ? '已逾期 ' + (-d) + ' 天' : '到期（剩 ' + d + ' 天）'}${c['車牌'] ? '・' + c['車牌'] : ''}`,
       text: `${nm}您好，提醒您愛車${c['車牌'] ? '（' + c['車牌'] + '）' : ''}的定期驗車期限是 ${ins}，逾期會被罰款喔！需要我們幫您代驗或先做檢查，直接回覆我就可以安排。` }); }
+    SV().contacts.filter(k => k['客戶編號'] === id && k['追蹤日']).forEach(k => { const d = daysTo(k['追蹤日']);
+      if (d <= 3) push({ key: '追蹤|' + id + '|' + k['時間'], kind: '追蹤', days: d, title: '追蹤：' + (k['類型'] || '紀錄'), detail: `${md(k['追蹤日'])} ${d < 0 ? '已過 ' + (-d) + ' 天' : d === 0 ? '今天' : d + ' 天後'}・${String(k['內容'] || '').slice(0, 40)}`, note: true,
+        text: '' }); });
     const nb = nextBirthday(c['生日']); if (nb) { const d = daysTo(nb); if (d <= R.birthday) push({ key: '生日|' + id + '|' + nb.slice(0, 4), kind: '生日', days: d, title: '客戶生日', detail: `${md(nb)} 生日${d === 0 ? '（今天）' : `（${d} 天後）`}`, card: true,
       text: `${nm}，生日快樂！感謝您選擇永駿車業，祝福新的一歲平安順心，行車一路順風。` }); }
     if (hol) { const d = daysTo(hol); if (d <= R.holiday) push({ key: '節日|' + id + '|' + hol, kind: '節日', days: d, title: SV().holidays[hol] + '祝福', detail: `${md(hol)} ${SV().holidays[hol]}（${d} 天後）`, card: true,
@@ -487,7 +501,7 @@ function reminders() {
   });
   return out.filter(r => !svSeller || r.c['業務'] === svSeller).sort((a, b) => a.days - b.days);
 }
-const KIND_CLS = { 保固: 'ready', 優惠券: 'active', 保險: 'done', 驗車: 'active', 生日: 'stale', 節日: 'stale' };
+const KIND_CLS = { 保固: 'ready', 優惠券: 'active', 保險: 'done', 驗車: 'active', 追蹤: 'ready', 生日: 'stale', 節日: 'stale' };
 function renderService() {
   const rs = reminders();
   let custs = SV().customers.filter(c => !svSeller || c['業務'] === svSeller);
@@ -502,39 +516,93 @@ function renderService() {
       <div style="min-width:0"><b>${esc(r.c['客戶'])}</b>・${esc(r.title)} <span class="small muted">（${esc(r.c['業務'])}・${esc(r.c['車款'])}）</span><div class="small muted">${esc(r.detail)}</div></div>
       <div class="ctl"><button class="btn" data-cust="${r.c['編號']}">客戶資料</button><button class="btn acc" data-rem="${esc(r.key)}">處理</button></div></div>`).join('') || '<p class="muted" style="margin:0">目前沒有待辦，都處理完了。</p>'}</section>
     <p class="small muted" style="margin:0">提醒規則：保固到期前 ${SV().remind.warranty} 天、贈送券到期前 ${SV().remind.coupon} 天、本公司車險到期前 ${SV().remind.renew} 天、他家車險到期前 ${SV().remind.switchIns} 天、驗車前 ${SV().remind.inspect || 30} 天（處理後自動排下一次）、生日前 ${SV().remind.birthday} 天、節日前 ${SV().remind.holiday} 天。按「處理」可以用 LINE 傳訊息，或標記已用其他方式聯絡。</p>`
-  : `<section class="row"><input type="text" id="svq" placeholder="搜尋客人、車款、車牌、電話" value="${esc(svQ)}" aria-label="搜尋客戶" style="flex:1"></section>
-    <section class="panel" style="padding:0"><div class="tbl-wrap"><table style="min-width:760px;font-size:13.5px"><thead><tr><th>客人</th><th>車款</th><th>業務</th><th>交車日</th><th>保固</th><th>車險</th><th>生日</th><th>LINE</th><th></th></tr></thead>
-    <tbody>${custs.map(c => { const we = addMonthsS(c['交車日'], SV().warrantyMonths), wd = daysTo(we), cps = SV().coupons.filter(q => q['客戶編號'] === c['編號'] && q['狀態'] === '未使用' && q['到期日'] >= D.today).length;
-      return `<tr><td><b>${esc(c['客戶'])}</b>${c['來源'] === '舊客人匯入' ? '<div class="small muted">舊客人</div>' : ''}</td><td>${esc(c['車款'])}<div class="mono small muted">${esc(c['車牌'])}</div></td><td>${esc(c['業務'])}</td>
-      <td class="mono">${c['交車日']}</td><td>${c['來源'] === '系統交車' ? (wd >= 0 ? `<span class="pill ready">剩 ${wd} 天</span>` : '<span class="pill done">已過</span>') : '—'}</td>
-      <td class="small">${c['本公司投保'] === '是' ? `<span class="pill ready">本公司</span> ${c['保險到期日'] ? md(c['保險到期日']) : ''}` : c['保險到期日'] ? `他家 ${md(c['保險到期日'])}` : '<span class="muted">—</span>'}</td>
-      <td class="mono small">${c['生日'] ? md(c['生日']) : '—'}</td><td>${isCoCust(c) ? '<span class="muted small">公司車</span>' : c.bound ? '<span class="pill ready">已綁定</span>' : '<span class="pill stale">未綁定</span>'}</td>
-      <td><button class="btn" data-cust="${c['編號']}">查看${cps ? `・券 ${cps}` : ''}</button></td></tr>`; }).join('') || '<tr><td colspan="9" class="muted">還沒有已交車客戶</td></tr>'}</tbody></table></div></section>`}`;
+  : custList(custs)}`;
 }
-function custModal(c) {
-  const id = c['編號'], we = addMonthsS(c['交車日'], SV().warrantyMonths), cps = SV().coupons.filter(q => q['客戶編號'] === id);
+function custList(custs) {
+  const c = selCust && custById(selCust);
+  const shown = custs.slice(0, 200);
+  return `<div class="grid2 svgrid ${c ? 'picked' : ''}">
+    <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <input type="text" id="svq" class="olist-h" placeholder="搜尋客人、車款、車牌、電話" value="${esc(svQ)}" aria-label="搜尋客戶">
+      <aside class="olist">${shown.map(m => { const n = reminders().filter(r => r.c['編號'] === m['編號']).length;
+        return `<button class="ocard" data-pick="${m['編號']}" aria-current="${m['編號'] === selCust}">
+        <span class="row" style="justify-content:space-between;width:100%"><b>${esc(m['客戶'])}</b><span class="mono small muted">${esc(m['車牌'])}</span></span>
+        <span class="small muted">${esc(m['車款'])}・${esc(m['業務'])}</span>
+        <span class="row small" style="gap:6px"><span class="muted">交車 <span class="mono">${m['交車日']}</span></span>${n ? `<span class="pill stale">待辦 ${n}</span>` : ''}${isCoCust(m) ? '' : m.bound ? '<span class="pill ready">LINE</span>' : ''}</span></button>`; }).join('') || '<p class="muted">沒有符合的客人</p>'}
+        ${custs.length > 200 ? `<p class="small muted">還有 ${custs.length - 200} 位，請用搜尋找</p>` : ''}</aside>
+    </div>
+    <div class="cdetail" style="min-width:0">${c ? custDetail(c) : '<div class="panel muted">點左邊的客人，看客戶資料、記錄互動。</div>'}</div>
+  </div>`;
+}
+function custDetail(c) {
+  const id = c['編號'], sys = c['來源'] === '系統交車', we = addMonthsS(c['交車日'], SV().warrantyMonths), wd = daysTo(we);
+  const cps = SV().coupons.filter(q => q['客戶編號'] === id), rs = reminders().filter(r => r.c['編號'] === id);
   const logs = SV().contacts.filter(k => k['客戶編號'] === id).sort((a, b) => b['時間'].localeCompare(a['時間']));
-  const url = D.customerPage + '?t=' + c['客戶頁代碼'];
+  const url = D.customerPage + '?t=' + c['客戶頁代碼'], nb = nextBirthday(c['生日']), ins = c['下次驗車日'];
+  const hol = Object.keys(SV().holidays).sort().find(d => d >= D.today);
   const bindMsg = `${c['客戶']}您好，我是永駿車業的${c['業務']}！之後愛車的保養、保固和優惠都可以在這裡收到通知。\n在這個聊天室回覆「綁定 ${c['綁定碼']}」就完成設定囉！\n\n我的愛車：${url}`;
-  return `<h3>${esc(c['客戶'])}・${esc(c['車款'])}</h3>
-  <div class="log"><div><span class="muted">業務</span><span>${esc(c['業務'])}</span></div><div><span class="muted">車牌</span><span class="mono">${esc(c['車牌']) || '—'}</span></div>
-    <div><span class="muted">交車日</span><span class="mono">${c['交車日']}${c['來源'] === '系統交車' ? `・保固至 ${we}（${daysTo(we) >= 0 ? '剩 ' + daysTo(we) + ' 天' : '已過'}）` : ''}</span></div>
-    <div><span class="muted">電話</span><span class="mono">${c['電話'] ? `<a href="tel:${esc(c['電話'])}">${esc(c['電話'])}</a>` : '—'}</span></div>
-    <div><span class="muted">生日</span><span class="mono">${bdShow(c['生日'])}</span></div>
-    ${c['身分證'] ? `<div><span class="muted">身分證</span><span class="mono">${esc(c['身分證'])}</span></div>` : ''}
-    ${c['地址'] ? `<div><span class="muted">地址</span><span>${esc(c['地址'])}</span></div>` : ''}
-    ${c['年份'] || c['價格'] ? `<div><span class="muted">年份／價格</span><span class="mono">${esc(c['年份']) || '—'}・${c['價格'] ? money(+c['價格']) : '—'}</span></div>` : ''}
-    <div><span class="muted">下次驗車</span><span class="mono">${c['下次驗車日'] ? c['下次驗車日'] + `（${daysTo(c['下次驗車日']) >= 0 ? '剩 ' + daysTo(c['下次驗車日']) + ' 天' : '已逾期'}）` : '—'}</span></div>
-    <div><span class="muted">車險</span><span>${c['本公司投保'] === '是' ? '本公司代辦・' : ''}${esc(c['保險公司']) || '—'} ${esc(c['保險類型'])} ${c['保險到期日'] ? '・到期 ' + c['保險到期日'] : ''}</span></div>
-    ${c['備註'] ? `<div><span class="muted">備註</span><span>${esc(c['備註'])}</span></div>` : ''}</div>
-  <div class="row"><button class="btn" data-editcust="${id}">修改資料</button><a class="btn" href="${url}" target="_blank" rel="noopener">看客戶畫面</a>${canLine(c) ? `<button class="btn acc" data-msg="${id}">傳 LINE 訊息</button>` : ''}</div>
-  ${isCoCust(c) ? '<div class="bind yes small">公司車不發 LINE 通知</div>' : c.bound ? '' : `<div class="bind no"><b>客人還沒綁定 LINE</b><span>複製下面訊息貼到你的官方帳號聊天室，客人回覆綁定碼後就能收到通知。</span><textarea id="cbind" readonly rows="5">${esc(bindMsg.replace(/\\n/g, '\n'))}</textarea><div><button class="btn pri" data-copy="cbind">複製訊息</button></div></div>`}
-  <div class="sec"><div class="label">贈送券</div>
-    ${cps.map(q => { const d = daysTo(q['到期日']); return `<div class="row small" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:6px"><span><b>${esc(q['內容'])}</b> ${q['狀態'] === '已使用' ? `<span class="muted">已使用 ${q['使用日']}</span>` : d < 0 ? `<span class="muted">已過期 ${q['到期日']}</span>` : `<span style="color:${d <= 45 ? 'var(--warn)' : 'var(--muted)'}">${q['到期日']} 到期（剩 ${d} 天）</span>`}</span>
-      ${q['狀態'] === '未使用' && d >= 0 ? `<button class="btn" data-usecp="${q['編號']}">標記已使用</button>` : ''}</div>`; }).join('') || '<span class="small muted">沒有贈送券</span>'}
-    <form id="addcp" data-id="${id}" class="row" style="gap:6px"><input type="text" id="ncp-t" placeholder="新增券的內容" style="flex:1;min-width:140px"><input type="date" id="ncp-e" aria-label="到期日"><button class="btn" type="submit">＋ 新增</button></form></div>
-  <div class="sec"><div class="label">互動紀錄</div><div class="log">${logs.map(k => `<div><span class="mono muted">${k['時間'].slice(5, 10)}</span><span><b>${esc(k['類型'])}</b>・${esc(k['內容'])}${k['LINE'] ? ` <span class="small muted">（LINE${k['結果'] === '失敗' ? '・失敗' : ''}）</span>` : ''}${k.imageUrl ? `<div class="thumbs" style="margin-top:4px"><img src="${k.imageUrl}" alt="附圖" data-zoom></div>` : ''}</span></div>`).join('') || '<span class="muted">尚無紀錄</span>'}</div></div>
-  <div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>關閉</button></div>`;
+  return `<section style="display:flex;flex-direction:column;gap:14px;min-width:0">
+  <div><button class="btn back" data-pick="">← 客戶列表</button></div>
+  <div class="panel sec">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><h2 style="font-size:19px">${esc(c['客戶'])}・${esc(c['車款'])}</h2>
+        <div class="small muted">車牌 <span class="mono">${esc(c['車牌']) || '—'}</span>・業務 ${esc(c['業務'])}${c['電話'] ? `・<a href="tel:${esc(c['電話'])}" class="mono">${esc(c['電話'])}</a>` : ''}${sys ? '' : '・舊客人'}</div></div>
+      <div class="row" style="gap:6px"><button class="btn" data-editcust="${id}">修改資料</button><a class="btn" href="${url}" target="_blank" rel="noopener">看客戶畫面</a>${canLine(c) ? `<button class="btn acc" data-msg="${id}">傳 LINE</button>` : ''}</div>
+    </div>
+    <div class="facts">
+      <div class="fact key"><div class="label">交車日</div><div class="v">${c['交車日']}</div></div>
+      <div class="fact"><div class="label">保固到期</div><div class="v">${sys ? we : '—'}</div><div class="small" style="color:${sys && wd >= 0 ? 'var(--ok)' : 'var(--muted)'}">${sys ? (wd >= 0 ? `保固中・剩 ${wd} 天` : '已過保固') : '系統上線前交車'}</div></div>
+      <div class="fact"><div class="label">客戶生日</div><div class="v">${c['生日'] ? md(c['生日']) : '—'}</div><div class="small muted">${nb ? `${daysTo(nb)} 天後` : '未填寫'}</div></div>
+      <div class="fact"><div class="label">下次驗車</div><div class="v">${ins || '—'}</div><div class="small muted">${ins ? (daysTo(ins) >= 0 ? `剩 ${daysTo(ins)} 天` : '已逾期') : '未填寫'}</div></div>
+    </div>
+  </div>
+  ${isCoCust(c) ? '' : c.bound ? '' : `<div class="bind no"><b>客人還沒綁定 LINE</b><span>複製下面訊息貼到你的官方帳號聊天室，客人回覆綁定碼後就能收到通知。</span><textarea id="cbind" readonly rows="4">${esc(bindMsg)}</textarea><div><button class="btn pri" data-copy="cbind">複製訊息</button></div></div>`}
+  ${rs.length ? `<div class="panel sec"><h3>待辦提醒</h3><div>${rs.map(r => `<div class="li"><div style="min-width:0;flex:1"><span class="pill ${KIND_CLS[r.kind] || 'done'}">${r.kind}</span> <b>${esc(r.title)}</b><div class="small muted">${esc(r.detail)}</div></div><button class="btn acc" data-rem="${esc(r.key)}">處理</button></div>`).join('')}</div></div>` : ''}
+  <form class="panel sec" id="nf" data-id="${id}">
+    <h3>新增紀錄</h3>
+    <div class="row" style="gap:6px;flex-wrap:wrap">${NOTE_TYPES.map((t, i) => `<label class="chip" style="cursor:pointer"><input type="radio" name="ntype" value="${t}" ${i === 0 ? 'checked' : ''} style="margin:0 4px 0 0">${t}</label>`).join('')}</div>
+    <textarea id="ntext" rows="3" placeholder="例如：電話關心，客人說冷氣不太冷，約 11/10 回廠檢查。"></textarea>
+    <label class="drop" for="nphoto">＋ 附照片（選填，最多 4 張）<input id="nphoto" type="file" accept="image/*" multiple></label>
+    <div class="thumbs" id="nthumbs">${notePhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join('')}</div>
+    <div class="row" style="justify-content:space-between"><label class="row small" style="gap:6px">下次追蹤<input type="date" id="nfollow" aria-label="下次追蹤日"></label><button class="btn acc" type="submit">新增紀錄</button></div>
+    <p class="small muted" style="margin:0">填了下次追蹤日，當天前 3 天會出現在待辦提醒。${D.me.isOffice ? '紀錄送出後只有主管和負責業務看得到。' : '紀錄只有公司內部看得到，客人看不到。'}</p>
+  </form>
+  ${D.me.isOffice ? '' : `  <div class="panel sec"><h3>互動紀錄</h3>
+    <div class="tl2">${logs.map(k => `<div class="it"><div class="row small" style="gap:6px"><b>${esc(k['類型'])}</b><span class="mono muted">${esc(k['時間'].slice(0, 16))}・${esc(k['業務'])}</span>${k['LINE'] ? `<span class="pill ${k['結果'] === '失敗' ? 'stale' : 'ready'}">LINE${k['結果'] === '失敗' ? ' 失敗' : ''}</span>` : ''}${k['追蹤日'] ? `<span class="pill active">追蹤 ${md(k['追蹤日'])}</span>` : ''}</div>
+      ${k['內容'] ? `<div style="margin-top:2px;white-space:pre-wrap">${esc(k['內容'])}</div>` : ''}${(k.images || []).length ? `<div class="thumbs" style="margin-top:6px">${k.images.map(u => `<img src="${u}" alt="紀錄照片" data-zoom loading="lazy">`).join('')}</div>` : ''}</div>`).join('') || '<span class="muted small">尚無紀錄</span>'}</div></div>`}
+  <div class="panel sec"><h3>贈送券</h3>
+    <div>${cps.map(q => { const d = daysTo(q['到期日']); return `<div class="li"><div><b>${esc(q['內容'])}</b> ${q['狀態'] === '已使用' ? `<span class="small muted">已使用 ${q['使用日']}</span>` : d < 0 ? `<span class="small muted">已過期 ${q['到期日']}</span>` : `<span class="small" style="color:${d <= 45 ? 'var(--warn)' : 'var(--muted)'}">${q['到期日']} 到期・剩 ${d} 天</span>`}</div>
+      ${q['狀態'] === '未使用' && d >= 0 ? `<button class="btn" data-usecp="${q['編號']}">標記已使用</button>` : ''}</div>`; }).join('') || '<p class="small muted" style="margin:0">沒有贈送券</p>'}</div>
+    <form id="addcp" data-id="${id}" class="row" style="gap:6px"><input type="text" id="ncp-t" placeholder="新增券的內容，例如 免費保養一次" style="flex:1;min-width:140px"><input type="date" id="ncp-e" aria-label="到期日"><button class="btn" type="submit">＋ 新增券</button></form></div>
+  <div class="panel sec"><h3>任意險</h3>
+    ${c['本公司投保'] === '是' ? `<div class="li"><div><span class="pill ready">本公司代辦</span> <b>${esc(c['保險公司'])}</b> <span class="small muted">${esc(c['保險類型'])}</span>
+        <div class="small">${c['保險到期日'] ? `${c['保險到期日']} 到期・${daysTo(c['保險到期日']) >= 0 ? '剩 ' + daysTo(c['保險到期日']) + ' 天' : '已過期'}` : '未填到期日'}</div></div>${c['保險到期日'] ? `<button class="btn" data-renew="${id}">已完成續保（延一年）</button>` : ''}</div>`
+      : `<div class="li"><div><span class="pill stale">未在本公司投保</span> <span class="small muted">${c['保險到期日'] ? `目前：${esc(c['保險公司']) || '他家'}・${c['保險到期日']} 到期` : '目前保險公司不明'}</span></div></div>
+        <form class="row small" id="insf" data-id="${id}" style="gap:6px"><span class="muted">客戶同意投保：</span><input type="text" id="ins-co" placeholder="保險公司" aria-label="保險公司" style="width:120px"><input type="text" id="ins-ty" placeholder="險種" aria-label="險種" style="width:100px"><input type="date" id="ins-exp" aria-label="到期日"><button class="btn pri" type="submit">登記投保</button></form>`}
+  </div>
+  <div class="panel sec"><h3>賀卡與關心</h3>
+    <div class="row">${canLine(c) ? `<button class="btn" data-card="${id}|birthday" ${c['生日'] ? '' : 'disabled'}>傳生日賀卡</button>${hol ? `<button class="btn" data-card="${id}|holiday">傳${SV().holidays[hol]}賀卡</button>` : ''}` : '<span class="small muted">客人綁定 LINE 後就能從你的官方帳號傳賀卡</span>'}
+      ${hol ? `<span class="small muted">下一個節日：${SV().holidays[hol]} ${md(hol)}</span>` : ''}</div></div>
+  <div class="panel sec"><h3>客戶資料</h3>
+    <div class="log">
+      <div><span class="muted">身分證</span><span class="mono">${esc(c['身分證']) || '—'}</span></div>
+      <div><span class="muted">地址</span><span>${esc(c['地址']) || '—'}</span></div>
+      <div><span class="muted">年份</span><span class="mono">${esc(c['年份']) || '—'}</span></div>
+      <div><span class="muted">價格</span><span class="mono">${c['價格'] ? money(+c['價格']) : '—'}</span></div>
+      <div><span class="muted">生日</span><span class="mono">${bdShow(c['生日'])}</span></div>
+      <div><span class="muted">備註</span><span>${esc(c['備註']) || '—'}</span></div>
+    </div></div>
+  </section>`;
+}
+const NOTE_TYPES = ['電話關心', '回廠保養', '維修', '客訴／問題', '介紹客人', '拜訪', '其他'];
+function followModal(r) {
+  const c = r.c;
+  return `<h3>${esc(r.title)}・${esc(c['客戶'])}</h3><div class="small muted">${esc(r.detail)}</div>
+  <form id="ff" class="sec" data-id="${c['編號']}" data-key="${esc(r.key)}">
+    <label class="label" for="ftext">追蹤結果</label><textarea id="ftext" rows="3" placeholder="例如：已回廠檢查，冷媒補充完成。"></textarea>
+    <label class="row small" style="gap:6px">還要再追蹤<input type="date" id="ffollow"></label>
+    <div class="row" style="justify-content:space-between">${canLine(c) ? `<button type="button" class="btn" data-msg="${c['編號']}">改用 LINE 傳訊息</button>` : '<span></span>'}<button class="btn acc" type="submit">記錄並完成</button></div>
+  </form>`;
 }
 function msgModal(c, r) {
   const ok = canLine(c);
@@ -938,12 +1006,18 @@ document.addEventListener('click', async e => {
   if (ds.act === 'importcust') { impRows = null; openModal(importModal()); return; }
   if (ds.act === 'tpl') { await loadXLSX(); downloadTemplate(); return; }
   if (ds.act === 'doimport') { await doImport(t); return; }
-  if (ds.cust) { openModal(custModal(custById(ds.cust))); return; }
+  if (ds.cust) { selCust = ds.cust; svTab = 'list'; notePhotos = []; render(); window.scrollTo(0, 0); return; }
+  if (ds.pick !== undefined) { selCust = ds.pick || null; notePhotos = []; render(); window.scrollTo(0, 0); return; }
+  if (ds.renew) { await act({ action: 'renewInsurance', id: ds.renew }, t); return; }
+  if (ds.card) { const [cid, kind] = ds.card.split('|'); const c = custById(cid); const r = reminders().find(x => x.c['編號'] === cid && x.kind === (kind === 'birthday' ? '生日' : '節日'));
+    const hol = Object.keys(SV().holidays).sort().find(d => d >= D.today);
+    msgImage = null; openModal(msgModal(c, r || { key: '', kind: kind === 'birthday' ? '生日' : '節日', card: true, title: kind === 'birthday' ? '生日賀卡' : SV().holidays[hol] + '賀卡', detail: '',
+      text: kind === 'birthday' ? `${c['客戶']}，生日快樂！感謝您選擇永駿車業，祝福新的一歲平安順心，行車一路順風。` : `${c['客戶']}，${SV().holidays[hol]}快樂！感謝您一路以來的支持，祝您與家人佳節愉快、出入平安。` })); return; }
   if (ds.editcust) { openModal(editCustForm(custById(ds.editcust))); return; }
   if (ds.msg) { msgImage = null; openModal(msgModal(custById(ds.msg))); return; }
-  if (ds.rem) { const r = reminders().find(x => x.key === ds.rem); if (r) { msgImage = null; openModal(msgModal(r.c, r)); } return; }
+  if (ds.rem) { const r = reminders().find(x => x.key === ds.rem); if (r) { msgImage = null; openModal(r.note ? followModal(r) : msgModal(r.c, r)); } return; }
   if (ds.markdone) { await act({ action: 'logContact', id: ds.cid, key: ds.markdone, type: ds.kind, text: ($('#mtext')?.value.trim() || '') ? '其他方式聯絡：' + $('#mtext').value.trim().slice(0, 80) : '已用其他方式聯絡' }, t); return; }
-  if (ds.usecp) { const q = SV().coupons.find(x => x['編號'] === ds.usecp); const r = await act({ action: 'useCoupon', id: ds.usecp }, t); if (r && r.ok && q) openModal(custModal(custById(q['客戶編號']))); return; }
+  if (ds.usecp) { const q = SV().coupons.find(x => x['編號'] === ds.usecp); const r = await act({ action: 'useCoupon', id: ds.usecp }, t); return; }
   if (ds.prepgo) { page = 'prep'; selOrder = ds.prepgo; pendingPhotos = []; render(); window.scrollTo(0, 0); return; }
   if (ds.sel) { selOrder = ds.sel; pendingPhotos = []; render(); return; }
   if (ds.copy) { const el = $('#' + ds.copy); el.select(); el.setSelectionRange(0, 99999); let ok = false; try { await navigator.clipboard.writeText(el.value); ok = true; } catch (x) { try { ok = document.execCommand('copy'); } catch (y) {} } toast(ok ? '已複製' : '請長按文字框手動複製'); return; }
@@ -969,6 +1043,8 @@ document.addEventListener('change', async e => {
   if (id === 'bmon') { bonusMonth = t.value; render(); }
   if (id === 'svs') { svSeller = t.value; render(); }
   if (id === 'mimg' && t.files[0]) { try { msgImage = await compress(t.files[0]); $('#mthumb').innerHTML = `<img src="${msgImage}" alt="附圖">`; } catch (x) { toast('圖片讀取失敗'); } }
+  if (id === 'nphoto') { const files = [...t.files].slice(0, 4 - notePhotos.length); for (const f of files) { try { notePhotos.push(await compress(f)); } catch (x) {} }
+    $('#nthumbs').innerHTML = notePhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join(''); }
   if (id === 'pphoto') { const files = [...t.files].slice(0, 8 - pendingPhotos.length); toast('照片處理中…');
     for (const f of files) { try { pendingPhotos.push(await compress(f)); } catch (x) {} }
     $('#pthumbs').innerHTML = pendingPhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join(''); toast(`已選 ${pendingPhotos.length} 張照片`); }
@@ -1008,7 +1084,10 @@ document.addEventListener('submit', async e => {
   if (f.id === 'ecf') await act({ action: 'updateCustomer', id: f.dataset.id, fields: { '客戶': g('ec-n'), '車款': g('ec-car'), '車牌': g('ec-p'), '生日': isoOut(g('ec-b')),
     '本公司投保': $('#ec-us').checked ? '是' : '否', '保險公司': g('ec-ic'), '保險類型': g('ec-it'), '保險到期日': isoOut(g('ec-ie')), '備註': g('ec-note'),
     '電話': g('ec-tel'), '身分證': g('ec-idn'), '地址': g('ec-addr'), '年份': g('ec-yr'), '價格': g('ec-pr'), '下次驗車日': isoOut(g('ec-insp')) } }, btn);
-  if (f.id === 'addcp') { const cid = f.dataset.id; const r = await act({ action: 'addCoupon', id: cid, text: g('ncp-t'), expire: isoOut(g('ncp-e')) }, btn); if (r && r.ok) openModal(custModal(custById(cid))); }
+  if (f.id === 'nf' || f.id === 'ff') { const r = await act({ action: 'addNote', id: f.dataset.id, key: f.dataset.key || '', type: f.id === 'ff' ? '追蹤' : (f.querySelector('[name=ntype]:checked') || {}).value,
+      text: g(f.id === 'ff' ? 'ftext' : 'ntext'), followUp: isoOut(g(f.id === 'ff' ? 'ffollow' : 'nfollow')), photos: f.id === 'nf' ? notePhotos : [] }, btn); if (r && r.ok) { notePhotos = []; render(); } }
+  if (f.id === 'insf') await act({ action: 'updateCustomer', id: f.dataset.id, fields: { '本公司投保': '是', '保險公司': g('ins-co'), '保險類型': g('ins-ty'), '保險到期日': isoOut(g('ins-exp')) } }, btn);
+  if (f.id === 'addcp') { const cid = f.dataset.id; const r = await act({ action: 'addCoupon', id: cid, text: g('ncp-t'), expire: isoOut(g('ncp-e')) }, btn); }
   if (f.id === 'mf') await act({ action: 'sendMessage', id: f.dataset.id, key: f.dataset.key, type: f.dataset.type, text: g('mtext'), image: msgImage || '' }, btn);
   if (f.id === 'vf') {
     const visit = { date: isoOut(g('c-date')), sales: g('c-sales'), customer: g('c-cust'), source: g('c-type'), see: $('#c-p-see').checked, trade: $('#c-p-trade').checked,
