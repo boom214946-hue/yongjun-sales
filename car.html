@@ -49,9 +49,17 @@ body{background:var(--bg);color:var(--ink);font-family:"PingFang TC","Noto Sans 
 <div class="wrap" id="app"><div class="msg">讀取中…</div></div>
 <div class="lb" id="lb" hidden><img id="lbimg" alt="整備照片"></div>
 <script>
+// 防呆：這個檔案只能放在 GitHub 的 yongjun-sales，放錯（例如打卡系統 yongjun-punch）會直接顯示警告
+if (location.hostname.endsWith('github.io') && !location.pathname.startsWith('/yongjun-sales/')) {
+  document.addEventListener('DOMContentLoaded', () => { document.body.innerHTML = '<div style="padding:40px 20px;font:16px/1.7 sans-serif;text-align:center;color:#B3261E"><b style="font-size:20px">⚠️ 檔案放錯地方了</b><br>這是「永駿客戶專屬頁」的檔案，應該上傳到 GitHub 的 <b>yongjun-sales</b>。<br>請到這個資料夾的 History 把剛才的上傳還原。</div>'; });
+  throw new Error('wrong repo');
+}
+</script>
+<script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbzsewthHYW4Dpz-D-pr4xrmqwK5wKo22B1lEUzReJsa9mzLlutbI5k4sYspnoygb6OIxg/exec';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const md = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : '';
+const today = () => { const d = new Date(Date.now() + 8 * 3600e3); return d.toISOString().slice(0, 10).replace(/-/g, '/'); };
 function render(d) {
   const last = d.stages.length - 1, ready = d.stage >= last, done = d.status === '已交車';
   const pct = d.stage / last * 100;
@@ -62,14 +70,18 @@ function render(d) {
   <header class="top"><div class="s">永駿車業・${esc(d.customer)}的愛車整備進度</div><h1>${head}</h1><div class="sub">${sub}</div></header>
   <main class="body">
     ${ready && !done ? `<div class="ready"><b>✓ 車輛整備完成，可以進行交車</b><span>您的 ${esc(d.car)} 已全部整備完畢，業務 ${esc(d.seller)} 會盡快與您聯絡交車時間。</span></div>` : ''}
-    <div class="card"><div class="track"><span class="fill" style="width:calc(${pct}% - ${pct / 100 * 24}px)"></span>
-      ${d.stages.map((s, i) => `<div class="tk ${i <= d.stage ? 'done' : i === d.stage + 1 ? 'next' : ''}"><span class="c"></span>${esc(s).replace('／', '<br>')}</div>`).join('')}</div></div>
-    <div class="card"><dl class="kv"><dt>車輛</dt><dd>${esc(d.brand)} ${esc(d.model)} ${esc(String(d.year).slice(0, 4))}</dd><dt>顏色</dt><dd>${esc(d.color)}</dd>
+    ${d.warrantyEnd ? `<div class="card"><dl class="kv"><dt>交車日</dt><dd><b>${esc(d.delivered)}</b></dd>
+      <dt>保固</dt><dd>${d.warrantyEnd >= today() ? `<b style="color:var(--ok)">保固中</b>，至 ${esc(d.warrantyEnd)}` : `已於 ${esc(d.warrantyEnd)} 到期`}</dd>
+      ${d.insurance ? `<dt>車險</dt><dd>${esc(d.insurance.company)} ${esc(d.insurance.type)}・${esc(d.insurance.expire)} 到期</dd>` : ''}</dl></div>
+      ${d.coupons && d.coupons.length ? `<div class="card"><div class="label">我的優惠券</div>${d.coupons.map(c => `<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border:1.5px dashed var(--accent);border-radius:10px;background:var(--accent-soft);margin-bottom:8px"><b>${esc(c.text)}</b><span style="font-size:13px;white-space:nowrap">${md(c.expire)} 前</span></div>`).join('')}<div class="note">使用前請先透過 LINE 與業務預約</div></div>` : ''}` : ''}
+    ${d.updates.length ? `<div class="card"><div class="track"><span class="fill" style="width:calc(${pct}% - ${pct / 100 * 24}px)"></span>
+      ${d.stages.map((s, i) => `<div class="tk ${i <= d.stage ? 'done' : i === d.stage + 1 ? 'next' : ''}"><span class="c"></span>${esc(s).replace('／', '<br>')}</div>`).join('')}</div></div>` : ''}
+    <div class="card"><dl class="kv"><dt>車輛</dt><dd>${esc(d.brand)} ${esc(d.model)} ${esc(String(d.year).slice(0, 4))}</dd>${d.color ? `<dt>顏色</dt><dd>${esc(d.color)}</dd>` : ''}
       <dt>車牌</dt><dd>${esc(d.plate)}</dd><dt>負責業務</dt><dd>${esc(d.seller)}</dd></dl></div>
-    <div class="card"><div class="label">整備紀錄</div><div class="feed">${ups.map(u => `<div class="fi"><span class="b"></span><div>
+    ${d.updates.length ? `<div class="card"><div class="label">整備紀錄</div><div class="feed">${ups.map(u => `<div class="fi"><span class="b"></span><div>
       <div class="h">${esc(d.stages[u.stage])}</div><div class="tm">${esc(u.time.slice(0, 16))}</div>
       ${u.note ? `<div style="margin-top:4px">${esc(u.note)}</div>` : ''}
-      ${u.photos.length ? `<div class="thumbs">${u.photos.map(p => `<img src="${p}" alt="${esc(d.stages[u.stage])}照片" loading="lazy">`).join('')}</div>` : ''}</div></div>`).join('')}</div></div>
+      ${u.photos.length ? `<div class="thumbs">${u.photos.map(p => `<img src="${p}" alt="${esc(d.stages[u.stage])}照片" loading="lazy">`).join('')}</div>` : ''}</div></div>`).join('')}</div></div>` : ''}
     <div class="note">此頁面僅供查看・如有問題請直接在 LINE 聯絡您的業務</div>
   </main>`;
 }
