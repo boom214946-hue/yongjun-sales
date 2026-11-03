@@ -779,7 +779,7 @@ document.addEventListener('change', async e => {
 // ===== 車源管理（第三階段）=====
 const PREP_ITEMS = ['過戶', '烤漆', '維修', '鑑定', '加油', '上官網', '美容', '展示牌', '其他'];
 const PST = { 待處理: 'todo', 安排中: 'doing', 完成: 'done', 不需要: 'na' };
-let PREPS = {}, prepFilter = '', prepOpen = null;
+let PREPS = {}, prepFilter = '', prepOpen = null, prepMgr = null;
 const blankPrep = () => PREP_ITEMS.map(() => ({ st: '待處理', who: '', date: '', note: '', photos: [], by: '', time: '' }));
 const prepOf = id => PREPS[id] || blankPrep();
 const prepCars = () => CARS.filter(c => ['在庫', '已收訂'].includes(status(c)));
@@ -789,6 +789,10 @@ function renderPrepM() {
   const cars = prepCars(), counts = PREP_ITEMS.map((k, j) => cars.filter(c => open(prepOf(c.id)[j])).length);
   let list = cars.slice().sort((a, b) => prepPct(a.id) - prepPct(b.id) || stockDays(b) - stockDays(a));
   if (prepFilter !== '') list = list.filter(c => open(prepOf(c.id)[+prepFilter]));
+  if (prepMgr !== null) list = list.filter(c => (c.manager || '') === prepMgr);
+  const mgrs = [...new Set([...SALES(), ...cars.map(c => c.manager || '')])].map(m => { const mc = cars.filter(c => (c.manager || '') === m);
+    return { m, n: mc.length, booked: mc.filter(c => status(c) === '已收訂').length, old: mc.filter(c => stockDays(c) >= 90).length, pct: mc.length ? Math.round(mc.reduce((a, c) => a + prepPct(c.id), 0) / mc.length) : 0 }; })
+    .filter(x => x.n || x.m).sort((a, b) => (a.m === '') - (b.m === '') || b.n - a.n);
   const full = cars.filter(c => prepPct(c.id) === 100).length;
   const q = cars.filter(c => prepOf(c.id)[1].st === '安排中' && prepOf(c.id)[1].date).sort((a, b) => prepOf(a.id)[1].date.localeCompare(prepOf(b.id)[1].date));
   const unq = cars.filter(c => open(prepOf(c.id)[1]) && !(prepOf(c.id)[1].st === '安排中' && prepOf(c.id)[1].date)).length;
@@ -802,6 +806,11 @@ function renderPrepM() {
     <div class="kpi"><div class="label">待維修</div><div class="n" style="color:var(--warn)">${counts[2]}</div></div>
     <div class="kpi"><div class="label">待上官網</div><div class="n">${counts[5]}</div></div>
   </div>
+  <section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">各管理人負責的車</h3><span class="small muted">點一下只看那個人的車・分配新車時參考</span></div>
+    <div class="kpis6">${mgrs.map(x => `<button class="kpi" data-pmgr="${esc(x.m)}" style="text-align:left;cursor:pointer;${prepMgr === x.m ? 'border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)' : ''}">
+      <div class="label">${x.m ? esc(x.m) : '<span style="color:var(--warn)">未指派</span>'}</div><div class="n">${x.n}<span class="small muted"> 台</span></div>
+      <div class="s">${x.booked ? `已收訂 ${x.booked}・` : ''}整備平均 ${x.pct}%${x.old ? `・<span style="color:var(--warn)">90 天以上 ${x.old}</span>` : ''}</div></button>`).join('')}</div>
+    ${prepMgr !== null ? `<div><button class="btn" data-pmgr="__all">顯示全部管理人</button></div>` : ''}</section>
   <nav class="filters"><button class="chip" data-pf="" aria-pressed="${prepFilter === ''}">全部 ${cars.length}</button>${PREP_ITEMS.map((k, j) => `<button class="chip" data-pf="${j}" aria-pressed="${prepFilter === String(j)}">待${k} ${counts[j]}</button>`).join('')}</nav>
   <div class="prepgrid">
     <section class="panel"><div>${list.map(c => { const p = prepPct(c.id), age = stockDays(c);
@@ -1186,6 +1195,7 @@ document.addEventListener('click', async e => {
   if (ds.pm) { prepOpen = ds.pm; openModal(prepModal(ds.pm)); return; }
   if (ds.pst) { const [cid, j, v] = ds.pst.split('|'); await prepSave(cid, +j, { status: v }); return; }
   if (ds.pf !== undefined) { prepFilter = ds.pf; page = 'prepm'; render(); return; }
+  if (ds.pmgr !== undefined) { prepMgr = ds.pmgr === '__all' || ds.pmgr === prepMgr ? null : ds.pmgr; render(); return; }
   if (ds.swap) { const [a, b] = ds.swap.split('|'); await act({ action: 'swapPaint', a, b }, t); return; }
   if (ds.dellog) { if (confirm('刪除這筆工作紀錄？')) await act({ action: 'delLog', id: ds.dellog }, t); return; }
   if (ds.act === 'seekadd') { openModal(`<h3>登記尋車客人</h3><form class="form2" id="skf"><label>客人<input type="text" id="sk1" placeholder="李先生" required></label><label>想找的車<input type="text" id="sk2" placeholder="TOYOTA RAV4" required></label>
