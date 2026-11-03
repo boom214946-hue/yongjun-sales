@@ -131,7 +131,7 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 @media (max-width:820px){.grid2{grid-template-columns:1fr}}
 .olist{display:flex;flex-direction:column;gap:8px}
 .kpis6{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px}.kpi .s{font-size:12px;color:var(--muted)}
-.prep8{display:grid;grid-template-columns:repeat(8,minmax(34px,1fr));gap:4px}
+.prep8{display:grid;grid-template-columns:repeat(9,minmax(34px,1fr));gap:4px}
 .pi{border-radius:6px;padding:4px 2px;text-align:center;font-size:11px;font-weight:700;line-height:1.25;border:1px solid transparent;cursor:pointer}
 .pi.todo{background:var(--warn-soft);color:var(--warn)}.pi.doing{background:var(--accent-soft);color:var(--accent)}
 .pi.done{background:var(--ok-soft);color:var(--ok)}.pi.na{background:var(--surface2);color:var(--muted);text-decoration:line-through}
@@ -777,7 +777,7 @@ document.addEventListener('change', async e => {
   catch (err) { toast(err.message || '讀不到這個檔案'); }
 });
 // ===== 車源管理（第三階段）=====
-const PREP_ITEMS = ['過戶', '烤漆', '維修', '鑑定', '加油', '上官網', '美容', '其他'];
+const PREP_ITEMS = ['過戶', '烤漆', '維修', '鑑定', '加油', '上官網', '美容', '展示牌', '其他'];
 const PST = { 待處理: 'todo', 安排中: 'doing', 完成: 'done', 不需要: 'na' };
 let PREPS = {}, prepFilter = '', prepOpen = null;
 const blankPrep = () => PREP_ITEMS.map(() => ({ st: '待處理', who: '', date: '', note: '', photos: [], by: '', time: '' }));
@@ -869,7 +869,7 @@ function renderDash() {
   const pname = p => p === D.me.en ? p + '（我）' : p + (NICK[p] ? '（' + NICK[p] + '）' : '');
   return `
   <section class="row" style="justify-content:space-between"><div><h2 style="font-size:18px">${self ? '我的儀表板' : '業務儀表板'}</h2><div class="small muted">${self ? '記下每天做的事，月底一目了然' : '看每位業務這個月的活動力'}</div></div>
-    <div class="row">${boss ? `<select id="dws" aria-label="業務"><option value="">全部業務</option>${d.people.map(p => `<option value="${esc(p)}" ${p === who ? 'selected' : ''}>${esc(pname(p))}</option>`).join('')}</select>` : ''}
+    <div class="row">${boss ? `<select id="dws" aria-label="人員"><option value="">全部人員</option>${d.people.map(p => `<option value="${esc(p)}" ${p === who ? 'selected' : ''}>${esc(pname(p))}</option>`).join('')}</select>` : ''}
       <select id="dwm" aria-label="月份">${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m.slice(0, 4)} 年 ${+m.slice(5)} 月</option>`).join('')}</select></div></section>
   <div class="kpis6">
     <div class="kpi"><div class="label">客戶追蹤</div><div class="n">${fol}</div><div class="s">客戶服務互動紀錄</div></div>
@@ -880,7 +880,7 @@ function renderDash() {
     ${showAd ? `<div class="kpi"><div class="label">8891 上架</div><div class="n">${ad8891}</div><div class="s">本月刊登</div></div>` : ''}
     <div class="kpi ok"><div class="label">收訂／交車</div><div class="n">${deals[0]}／${deals[1]}</div><div class="s">本月</div></div>
   </div>
-  ${boss && all ? `<section class="panel"><h3 style="font-size:16px;margin-bottom:6px">各業務 ${+month.slice(5)} 月活動力</h3><div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>業務</th><th>客戶追蹤</th><th>尋車客人</th><th>找車源</th><th>影片</th><th>貼文</th><th>工作紀錄</th><th>紀錄天數</th></tr></thead><tbody>
+  ${boss && all ? `<section class="panel"><h3 style="font-size:16px;margin-bottom:6px">${+month.slice(5)} 月活動力（業務＋行政）</h3><div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>人員</th><th>客戶追蹤</th><th>尋車客人</th><th>找車源</th><th>影片</th><th>貼文</th><th>工作紀錄</th><th>紀錄天數</th></tr></thead><tbody>
     ${d.people.map(p => { const L = d.logs.filter(l => l['業務'] === p && l['日期'].startsWith(month)); return `<tr><td><b>${esc(pname(p))}</b></td><td class="mono">${(d.follows[p] || {})[month] || 0}</td><td class="mono">${d.seeks.filter(x => x['業務'] === p && x['狀態'] === '尋找中').length}</td><td class="mono">${d.sources.filter(x => x['業務'] === p && x['狀態'] === '追蹤中').length}</td>
       <td class="mono">${cnt(L, '拍影片上傳')}</td><td class="mono">${cnt(L, '發貼文')}</td><td class="mono">${L.length}</td><td class="mono">${new Set(L.map(l => l['日期'])).size}</td></tr>`; }).join('')}</tbody></table></div></section>` : ''}
   ${d.canLog ? `<form class="panel sec" id="lf"><h3 style="font-size:16px">新增工作紀錄</h3>
