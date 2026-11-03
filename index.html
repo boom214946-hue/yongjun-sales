@@ -135,7 +135,7 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .pi{border-radius:6px;padding:4px 2px;text-align:center;font-size:11px;font-weight:700;line-height:1.25;border:1px solid transparent;cursor:pointer}
 .pi.todo{background:var(--warn-soft);color:var(--warn)}.pi.doing{background:var(--accent-soft);color:var(--accent)}
 .pi.done{background:var(--ok-soft);color:var(--ok)}.pi.na{background:var(--surface2);color:var(--muted);text-decoration:line-through}
-.bar{height:8px;border-radius:99px;background:var(--surface2);overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+.pbar{height:8px;border-radius:99px;background:var(--surface2);overflow:hidden}.pbar i{display:block;height:100%;background:var(--accent)}
 .carrow{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(290px,2.4fr) 110px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .carrow:first-child{border-top:0}@media (max-width:760px){.carrow{grid-template-columns:minmax(0,1fr)}}
 .exp{display:grid;grid-template-columns:minmax(150px,1.3fr) 60px 90px 1fr 1fr 110px;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
@@ -807,7 +807,7 @@ function renderPrepM() {
     <section class="panel"><div>${list.map(c => { const p = prepPct(c.id), age = stockDays(c);
       return `<div class="carrow"><div><b>${esc(label(c))}</b> <span class="small muted">${esc(c.brand)}</span><div class="small muted mono">${esc(c.plate)}・管理 ${esc(c.manager) || '—'}・<span style="${age > 90 ? 'color:var(--warn);font-weight:700' : ''}">${age} 天</span>${status(c) === '已收訂' ? '・<span class="pill active">已收訂</span>' : ''}</div></div>
       <div class="prep8">${PREP_ITEMS.map((k, j) => { const it = prepOf(c.id)[j]; return `<button class="pi ${PST[it.st]}" data-pm="${c.id}" title="${k}：${it.st}">${k}<br>${it.st === '安排中' ? (it.date ? `<span class="mono">${md(it.date)}</span>` : '中') : it.st === '完成' ? '✓' : it.st === '不需要' ? '—' : '待'}</button>`; }).join('')}</div>
-      <div>${p === 100 ? '<div class="done100 small">✅ 100%<br>找好主人</div>' : `<div class="row small" style="justify-content:space-between"><b class="mono">${p}%</b><button class="btn" data-pm="${c.id}">更新</button></div><div class="bar"><i style="width:${p}%"></i></div>`}</div></div>`; }).join('') || '<p class="muted">沒有需要處理的車</p>'}</div></section>
+      <div>${p === 100 ? '<div class="done100 small">✅ 100%<br>找好主人</div>' : `<div class="row small" style="justify-content:space-between"><b class="mono">${p}%</b><button class="btn" data-pm="${c.id}">更新</button></div><div class="pbar"><i style="width:${p}%"></i></div>`}</div></div>`; }).join('') || '<p class="muted">沒有需要處理的車</p>'}</div></section>
     <aside class="sec">
       <section class="panel sec"><h3 style="font-size:16px">烤漆排程</h3><div class="small muted">依排定進場日排序，按 ↑↓ 互相調整順序</div>
         <div>${q.map((c, i) => { const it = prepOf(c.id)[1]; return `<div class="qrow"><span class="qn">${i + 1}</span><div style="flex:1;min-width:0"><button class="btn" data-pm="${c.id}" style="border:0;padding:0;background:none;text-align:left"><b class="small">${esc(label(c))}</b></button><div class="small muted"><span class="mono">${md(it.date)}</span> 進場・管理 ${esc(c.manager) || '—'}${it.note ? '・' + esc(it.note) : ''}</div></div>
@@ -821,7 +821,7 @@ function renderPrepM() {
 function prepModal(id) {
   const c = carById(id), p = prepPct(id);
   return `<h3>${esc(label(c))} ${esc(c.brand)}（${esc(c.plate)}）</h3><div class="small muted">管理人 ${esc(c.manager) || '—'}・入庫 ${stockDays(c)} 天・整備 ${p}%</div>
-  ${p === 100 ? '<div class="done100">✅ 整備全部完成，趕快找到好主人！</div>' : `<div class="bar"><i style="width:${p}%"></i></div>`}
+  ${p === 100 ? '<div class="done100">✅ 整備全部完成，趕快找到好主人！</div>' : `<div class="pbar"><i style="width:${p}%"></i></div>`}
   <div>${PREP_ITEMS.map((k, j) => { const it = prepOf(id)[j]; return `<div class="itemrow"><b>${k}</b><div class="sec" style="gap:6px">
     <div class="seg">${Object.keys(PST).map(v => `<button data-pst="${id}|${j}|${v}" aria-pressed="${it.st === v}">${v}</button>`).join('')}</div>
     ${it.st === '不需要' ? '' : `<div class="ctl"><input type="date" data-pdate="${id}|${j}" value="${it.date ? isoIn(it.date) : ''}" aria-label="${k}排定日期" title="排定日期" style="width:150px;flex:none">
@@ -880,6 +880,11 @@ function renderDash() {
     ${showAd ? `<div class="kpi"><div class="label">8891 上架</div><div class="n">${ad8891}</div><div class="s">本月刊登</div></div>` : ''}
     <div class="kpi ok"><div class="label">收訂／交車</div><div class="n">${deals[0]}／${deals[1]}</div><div class="s">本月</div></div>
   </div>
+  ${(() => { const E = mlogs.filter(l => l['類型'] === '拍影片上傳' || l['類型'] === '發貼文'); if (!E.length) return '';
+    const rows = d.platforms.map(p => ({ p, v: E.filter(l => l['類型'] === '拍影片上傳' && (l['平台'] || '').split(',').includes(p)).length, t: E.filter(l => l['類型'] === '發貼文' && (l['平台'] || '').split(',').includes(p)).length })).filter(r => r.v + r.t);
+    const max = Math.max(1, ...rows.map(r => r.v + r.t));
+    return `<section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">${+month.slice(5)} 月發在哪些平台</h3><span class="small muted">一支影片發多個平台，各平台都會算一次</span></div>
+      <div>${rows.map(r => `<div class="row" style="gap:10px;padding:4px 0;flex-wrap:nowrap"><b class="small" style="width:70px;flex:none">${r.p}</b><div style="flex:1;min-width:0"><div class="pbar" style="height:10px"><i style="width:${(r.v + r.t) / max * 100}%"></i></div></div><span class="small mono" style="width:110px;flex:none;text-align:right">影片 ${r.v}・貼文 ${r.t}</span></div>`).join('') || '<p class="small muted" style="margin:0">還沒有平台紀錄</p>'}</div></section>`; })()}
   ${boss && all ? `<section class="panel"><h3 style="font-size:16px;margin-bottom:6px">${+month.slice(5)} 月活動力（業務＋行政）</h3><div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>人員</th><th>客戶追蹤</th><th>尋車客人</th><th>找車源</th><th>影片</th><th>貼文</th><th>工作紀錄</th><th>紀錄天數</th></tr></thead><tbody>
     ${d.people.map(p => { const L = d.logs.filter(l => l['業務'] === p && l['日期'].startsWith(month)); return `<tr><td><b>${esc(pname(p))}</b></td><td class="mono">${(d.follows[p] || {})[month] || 0}</td><td class="mono">${d.seeks.filter(x => x['業務'] === p && x['狀態'] === '尋找中').length}</td><td class="mono">${d.sources.filter(x => x['業務'] === p && x['狀態'] === '追蹤中').length}</td>
       <td class="mono">${cnt(L, '拍影片上傳')}</td><td class="mono">${cnt(L, '發貼文')}</td><td class="mono">${L.length}</td><td class="mono">${new Set(L.map(l => l['日期'])).size}</td></tr>`; }).join('')}</tbody></table></div></section>` : ''}
@@ -887,7 +892,8 @@ function renderDash() {
     <div class="row" style="gap:6px">${types.map(t => `<label class="chip" style="cursor:pointer"><input type="radio" name="lt" value="${t}" ${t === logType ? 'checked' : ''} style="margin:0 4px 0 0">${t}</label>`).join('')}</div>
     <div class="row"><input type="date" id="ld" value="${isoIn(D.today)}" aria-label="日期">
       ${needCar ? `<select id="lc" style="flex:1;min-width:200px" aria-label="車輛"><option value="">選擇車源表的車輛</option>${prepCars().slice().sort((a, b) => a.inDate.localeCompare(b.inDate)).map(c => `<option value="${c.id}">${esc(label(c))} ${esc(c.brand)}（${esc(c.plate)}）</option>`).join('')}</select>` : ''}</div>
-    ${needLink ? `<input type="text" id="ll" placeholder="${logType === '上8891廣告' ? '貼上 8891 刊登網址（選填）' : '貼上連結（YouTube、IG、FB、TikTok…選填）'}">` : ''}
+    ${needLink ? `<input type="text" id="ll" placeholder="${logType === '上8891廣告' ? '貼上 8891 刊登網址（選填）' : '貼上連結（選填，貼了會自動勾平台）'}">` : ''}
+    ${['拍影片上傳', '發貼文'].includes(logType) ? `<div class="row" style="gap:6px"><span class="small muted">發在哪裡（可複選）</span>${d.platforms.map(p => `<label class="chip" style="cursor:pointer"><input type="checkbox" name="lp" value="${p}" style="margin:0 4px 0 0">${p}</label>`).join('')}</div>` : ''}
     <textarea id="ltx" rows="2" placeholder="${logType === '客戶追蹤' ? '例如：王大明 電話關心，約 11/10 回廠' : logType === '找車源' ? '例如：台中車商 RAV4 2020，開價 63 萬' : '內容（自由發揮）'}"></textarea>
     <div class="row" style="justify-content:space-between"><span class="small muted">選了車輛的影片／貼文，會算進「${self || !boss ? '我' : ''}對每台車的曝光」</span><button class="btn acc" type="submit">新增紀錄</button></div></form>` : ''}
   <section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">${self ? '我對每台車的曝光' : all ? '每台車的曝光（全部）' : '每台車的曝光（' + esc(who) + '）'}</h3>
@@ -910,7 +916,7 @@ function renderDash() {
   </div>
   <section class="panel sec"><h3 style="font-size:16px">${all ? '全部' : esc(pname(who))} ${+month.slice(5)} 月工作紀錄</h3>
     <div class="log2">${Object.keys(byDay).sort().reverse().map(day => `<div class="day">${md(day)}（${'日一二三四五六'[new Date(isoIn(day)).getDay()]}）</div>${byDay[day].map(l => { const c = l['車輛編號'] && carById(l['車輛編號']);
-      return `<div class="it row" style="gap:6px;justify-content:space-between;flex-wrap:nowrap"><div style="min-width:0"><span class="pill ${['拍影片上傳', '發貼文', '上8891廣告'].includes(l['類型']) ? 'active' : l['類型'] === '客戶追蹤' ? 'ready' : 'done'}">${esc(l['類型'])}</span>${all ? ` <b class="small">${esc(l['業務'])}</b>` : ''} ${c ? `<b>${esc(label(c))}</b> ` : l['車牌'] ? `<b class="mono">${esc(l['車牌'])}</b> ` : ''}${esc(l['內容'])}${l['連結'] ? ` <a href="${esc(l['連結'])}" target="_blank" rel="noopener" class="small">連結</a>` : ''}</div>
+      return `<div class="it row" style="gap:6px;justify-content:space-between;flex-wrap:nowrap"><div style="min-width:0"><span class="pill ${['拍影片上傳', '發貼文', '上8891廣告'].includes(l['類型']) ? 'active' : l['類型'] === '客戶追蹤' ? 'ready' : 'done'}">${esc(l['類型'])}</span>${all ? ` <b class="small">${esc(l['業務'])}</b>` : ''} ${c ? `<b>${esc(label(c))}</b> ` : l['車牌'] ? `<b class="mono">${esc(l['車牌'])}</b> ` : ''}${l['平台'] ? `<span class="small muted">［${esc(l['平台'].split(',').join('、'))}］</span> ` : ''}${esc(l['內容'])}${l['連結'] ? ` <a href="${esc(l['連結'])}" target="_blank" rel="noopener" class="small">連結</a>` : ''}</div>
       ${l['業務'] === D.me.en ? `<button class="btn" data-dellog="${l['編號']}" aria-label="刪除" style="padding:3px 8px">✕</button>` : ''}</div>`; }).join('')}`).join('') || '<p class="muted small" style="margin:0">這個月還沒有紀錄</p>'}</div></section>`;
 }
 let msgImage = null;
@@ -1224,6 +1230,8 @@ document.addEventListener('change', async e => {
   if (id === 'bmon') { bonusMonth = t.value; render(); }
   if (id === 'svs') { svSeller = t.value; render(); }
   if (id === 'dws') { dashWho = t.value; render(); }
+  if (id === 'll') { const u = t.value.toLowerCase(), p = /youtu/.test(u) ? 'YouTube' : /instagram/.test(u) ? 'IG' : /tiktok/.test(u) ? 'TikTok' : /threads\./.test(u) ? 'Threads' : /facebook\.com\/groups|fb\.com\/groups/.test(u) ? 'FB社團' : /facebook|fb\.(com|watch|me)/.test(u) ? 'FB粉專' : '';
+    const cb = p && document.querySelector(`[name=lp][value="${p}"]`); if (cb) cb.checked = true; }
   if (id === 'dwm') { dashMonth = t.value; render(); }
   if (t.name === 'lt') { logType = t.value; render(); }
   if (t.dataset.pwho) { const [cid, j] = t.dataset.pwho.split('|'); await prepSave(cid, +j, { who: t.value.trim() }); }
@@ -1261,7 +1269,7 @@ document.addEventListener('submit', async e => {
       await act({ action: 'addCar', car, visitId: pendingTrade || '' }, btn);
     }
   }
-  if (f.id === 'lf') { const r = await act({ action: 'addLog', type: logType, date: isoOut(g('ld')), carId: g('lc'), link: g('ll'), text: g('ltx') }, btn); }
+  if (f.id === 'lf') { const r = await act({ action: 'addLog', type: logType, date: isoOut(g('ld')), carId: g('lc'), link: g('ll'), text: g('ltx'), platforms: [...f.querySelectorAll('[name=lp]:checked')].map(x => x.value) }, btn); }
   if (f.id === 'skf') await act({ action: 'saveSeek', cust: g('sk1'), want: g('sk2'), year: g('sk3'), budget: g('sk4'), note: g('sk5') }, btn);
   if (f.id === 'srf') await act({ action: 'saveSource', car: g('sr1'), from: g('sr2'), price: g('sr3'), note: g('sr4') }, btn);
   if (f.id === 'of') await act({ action: 'addOrder', carId: f.dataset.id, seller: g('o-sales'), date: isoOut(g('o-date')), customer: g('o-cust'), price: g('o-price'), eta: isoOut(g('o-eta')) }, btn);
