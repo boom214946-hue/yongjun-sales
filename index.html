@@ -9,13 +9,13 @@
 :root{
   --bg:#EEF1F4; --surface:#FFFFFF; --surface2:#E6EAEF; --fg:#1C2733; --muted:#5B6878; --line:#D3D9E0;
   --ink:#1C2733; --accent:#B4611A; --accent-soft:#F6E7D8; --ok:#2E7D4F; --ok-soft:#DFF0E5; --warn:#B3261E; --warn-soft:#F8E1DF;
-  --pri:#1F4E79; --heat1:#FBE3E1; --heat2:#F4B8B3; --heat3:#D9534F; --hl:#FFF4C2; --line-green:#06C755;
+  --bolt:#9A7400; --bolt-soft:#FFF1B8; --pri:#1F4E79; --heat1:#FBE3E1; --heat2:#F4B8B3; --heat3:#D9534F; --hl:#FFF4C2; --line-green:#06C755;
   --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#141A21; --surface:#1C242D; --surface2:#252F3A; --fg:#E7ECF1; --muted:#9AA7B5; --line:#2C3642;
   --ink:#C9D6E6; --accent:#E08A3C; --accent-soft:#3A2A18; --ok:#5CB880; --ok-soft:#173025; --warn:#F07167; --warn-soft:#3A1E1C;
-  --pri:#3D7AB8; --heat1:#3A1F21; --heat2:#5C2427; --heat3:#A8302C; --hl:#3A3414; color-scheme:dark}}
+  --bolt:#F2C94C; --bolt-soft:#3A3212; --pri:#3D7AB8; --heat1:#3A1F21; --heat2:#5C2427; --heat3:#A8302C; --hl:#3A3414; color-scheme:dark}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
@@ -97,6 +97,11 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .hist th.pin,.hist td.pin{position:sticky;left:0;z-index:1;background:var(--surface);text-align:left;box-shadow:6px 0 8px -6px rgba(0,0,0,.25)}
 .hist .ok{color:var(--ok);font-weight:700} .hist .o{color:var(--accent);font-weight:700} .hist .x{color:var(--warn);font-weight:700}
 .hist th.nc{color:var(--warn)}
+.bolt{min-width:40px;height:36px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:18px;line-height:1;cursor:pointer}
+.bolt span{filter:grayscale(1);opacity:.35}
+.bolt[aria-pressed="true"]{background:var(--bolt-soft);border-color:var(--bolt)}
+.bolt[aria-pressed="true"] span{filter:none;opacity:1}
+.hist .z{font-size:12px;margin-left:2px}
 /* board */
 .board table{min-width:720px}
 .board th,.board td{text-align:center;border:1px solid var(--line);padding:8px 6px}
@@ -280,7 +285,7 @@ function normalize() {
   (D.prep || []).forEach(p => { const j = PREP_ITEMS.indexOf(p['項目']); if (j < 0) return; const a = PREPS[p['車輛編號']] = PREPS[p['車輛編號']] || blankPrep();
     a[j] = { st: p['狀態'] || '待處理', who: p['負責人'], date: p['排定日'], note: p['備註'], photos: p.photoUrls || [], by: p['更新人'], time: p['更新時間'] }; });
   CHECKS = {};
-  D.checks.forEach(c => { (CHECKS[c['日期']] = CHECKS[c['日期']] || { by: c['點車人'], time: c['時間'], items: {} }).items[c['車輛編號']] = { s: c['狀態'], reason: c['原因'], note: c['備註'] }; });
+  D.checks.forEach(c => { (CHECKS[c['日期']] = CHECKS[c['日期']] || { by: c['點車人'], time: c['時間'], items: {} }).items[c['車輛編號']] = { s: c['狀態'], reason: c['原因'], note: c['備註'], charge: c['充電'] === '⚡' }; });
   if (!boardMonth) boardMonth = ym(D.today);
   if (!bonusMonth) bonusMonth = ym(D.today);
   draft = null;
@@ -942,9 +947,9 @@ function startDraft() {
   draft = {};
   CARS.filter(inLot).forEach(c => {
     const t = CHECKS[today]?.items[c.id];
-    if (t) { draft[c.id] = { s: t.s, reason: t.reason, note: t.note }; return; }
+    if (t) { draft[c.id] = { s: t.s, reason: t.reason, note: t.note, charge: !!t.charge }; return; }
     let prev = null; for (const d of Object.keys(CHECKS).sort().reverse()) { if (d < today && CHECKS[d].items[c.id]) { prev = CHECKS[d].items[c.id]; break; } }
-    draft[c.id] = prev && prev.s === '外出' ? { s: '外出', reason: prev.reason, note: prev.note } : { s: '在店', reason: '', note: '' };
+    draft[c.id] = prev && prev.s === '外出' ? { s: '外出', reason: prev.reason, note: prev.note, charge: false } : { s: '在店', reason: '', note: '', charge: false };
   });
 }
 function outStreak(c) { let n = 0, r = ''; for (const d of Object.keys(CHECKS).sort().reverse()) { if (d >= D.today) continue; const it = CHECKS[d].items[c.id]; if (!it) continue; if (it.s === '外出') { n++; r = r || it.reason; } else break; } return { n, r }; }
@@ -953,6 +958,7 @@ function renderCount() {
   const today = D.today, done = CHECKS[today];
   const cars = CARS.filter(inLot).sort((a, b) => a.inDate.localeCompare(b.inDate));
   const n = { 在店: 0, 外出: 0, 找不到: 0 }; cars.forEach(c => n[draft[c.id].s]++);
+  const nz = cars.filter(c => draft[c.id].charge).length;
   const days = []; for (let i = histDays - 1; i >= 0; i--) days.push(addD(today, -i));
   const can = D.me.isSales || canAll();
   return `
@@ -973,7 +979,8 @@ function renderCount() {
         <div class="ctl">${can ? `<div class="seg" role="group" aria-label="${esc(c.plate)}">
           <button class="in" data-cs="${c.id}|在店" aria-pressed="${d.s === '在店'}">在店</button>
           <button class="out" data-cs="${c.id}|外出" aria-pressed="${d.s === '外出'}">外出</button>
-          <button class="miss" data-cs="${c.id}|找不到" aria-pressed="${d.s === '找不到'}">找不到</button></div>` : `<span class="small">${d.s}</span>`}
+          <button class="miss" data-cs="${c.id}|找不到" aria-pressed="${d.s === '找不到'}">找不到</button></div>
+          <button class="bolt" data-bolt="${c.id}" aria-pressed="${!!d.charge}" aria-label="${esc(c.plate)} 今天有充電" title="今天有充電"><span>⚡</span></button>` : `<span class="small">${d.s}${d.charge ? ' ⚡' : ''}</span>`}
           ${status(c) === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button>` : ''}</div>
         ${d.s === '外出' && can ? `<div class="extra"><select data-cr="${c.id}" aria-label="外出原因">${D.outReasons.map(r => `<option ${d.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
           <input type="text" data-cn="${c.id}" value="${esc(d.note || '')}" placeholder="地點／預計回店（選填）" style="flex:1;min-width:150px" aria-label="外出備註"></div>` : ''}
@@ -981,7 +988,7 @@ function renderCount() {
       </div>`;
     }).join('')}</div>
   </section>
-  ${can ? `<div class="sticky-bar"><span class="small">在店 <b>${n['在店']}</b>・外出 <b>${n['外出']}</b>・找不到 <b>${n['找不到']}</b></span><button class="btn acc" data-csubmit>${done ? '更新點車' : '送出點車'}</button></div>` : ''}
+  ${can ? `<div class="sticky-bar"><span class="small">在店 <b>${n['在店']}</b>・外出 <b>${n['外出']}</b>・找不到 <b>${n['找不到']}</b>・⚡充電 <b>${nz}</b></span><button class="btn acc" data-csubmit>${done ? '更新點車' : '送出點車'}</button></div>` : ''}
   <section class="panel sec hist">
     <div class="row" style="justify-content:space-between"><h3 style="font-size:16px">點車紀錄</h3>
       <div class="filters">${[10, 30].map(x => `<button class="chip" data-hd="${x}" aria-pressed="${histDays === x}">近 ${x} 天</button>`).join('')}</div></div>
@@ -990,9 +997,9 @@ function renderCount() {
         ${days.map(d => `<th class="${CHECKS[d] ? '' : 'nc'}">${md(d)}<div class="small" style="font-weight:400">${CHECKS[d] ? esc(CHECKS[d].by) : '未點'}</div></th>`).join('')}</tr></thead>
       <tbody>${CARS.filter(c => inLot(c) || days.some(d => CHECKS[d]?.items[c.id])).sort((a, b) => a.inDate.localeCompare(b.inDate)).map((c, i) => `<tr>
         <td class="l mono">${i + 1}</td><td class="l mono">${c.inDate}</td><td class="l mono">${esc(c.year)}</td><td class="pin"><b>${esc(c.model)}</b></td><td class="l mono">${esc(c.plate)}</td><td class="l">${esc(c.color)}</td><td class="l">${belong(c)}</td>
-        ${days.map(d => { const it = CHECKS[d]?.items[c.id]; return `<td>${!it ? '<span class="muted">·</span>' : it.s === '在店' ? '<span class="ok">✓</span>' : it.s === '外出' ? `<span class="o" title="${esc(it.note)}">${esc(it.reason)}</span>` : '<span class="x">找不到</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody>
+        ${days.map(d => { const it = CHECKS[d]?.items[c.id]; return `<td>${!it ? '<span class="muted">·</span>' : it.s === '在店' ? '<span class="ok">✓</span>' : it.s === '外出' ? `<span class="o" title="${esc(it.note)}">${esc(it.reason)}</span>` : '<span class="x">找不到</span>'}${it && it.charge ? '<span class="z" title="有充電">⚡</span>' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody>
     </table></div>
-    <p class="small muted" style="margin:0">✓ 在店・橘字為外出原因・「未點」表示那天沒有人點車。往右滑時「車型」固定在左邊。</p>
+    <p class="small muted" style="margin:0">✓ 在店・橘字為外出原因・⚡ 當天有充電・「未點」表示那天沒有人點車。往右滑時「車型」固定在左邊。</p>
   </section>`;
 }
 
@@ -1226,9 +1233,10 @@ document.addEventListener('click', async e => {
     openModal(carForm(null, { trade: { brand: b || '', model: m.join(' '), year: x.trade.year, km: x.trade.km, cost: x.trade.ask } })); pendingTrade = x.id; return; }
   if (ds.tradelost) { await act({ action: 'setTrade', id: ds.tradelost, status: '未成交' }, t); return; }
   if (ds.cs) { const [id, st] = ds.cs.split('|'); draft[id].s = st; if (st === '外出' && !draft[id].reason) draft[id].reason = D.outReasons[0]; render(); return; }
+  if (ds.bolt) { draft[ds.bolt].charge = !draft[ds.bolt].charge; render(); return; }
   if (ds.allin !== undefined) { Object.values(draft).forEach(d => d.s = '在店'); render(); return; }
   if (ds.hd) { histDays = +ds.hd; render(); return; }
-  if (ds.csubmit !== undefined) { await act({ action: 'submitCheck', items: Object.entries(draft).map(([id, d]) => ({ id, s: d.s, reason: d.reason, note: d.note })) }, t); return; }
+  if (ds.csubmit !== undefined) { await act({ action: 'submitCheck', items: Object.entries(draft).map(([id, d]) => ({ id, s: d.s, reason: d.reason, note: d.note, charge: !!d.charge })) }, t); return; }
 });
 document.addEventListener('input', e => {
   const id = e.target.id;
