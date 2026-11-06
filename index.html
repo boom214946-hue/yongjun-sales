@@ -377,7 +377,7 @@ function carForm(c, opt = {}) {
     <label>管理人${sel('f-mgr', ['', ...SALES(), '公司'], c.manager)}</label>` : ''}
     ${boss ? `<label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="f-official" ${c.official ? 'checked' : ''}> 公務車（不出售，只列入每日點車）</label>` : ''}
     <label class="full">備註<input type="text" id="f-note" value="${esc(c.note)}"></label>
-    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1。</p>` : ''}
+    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並通知管理員、業務和行政。</p>` : ''}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存' : '送出入庫'}</button></div>
   </form>`;
 }
@@ -400,7 +400,7 @@ function orderForm(c) {
     <label>成交價<input type="number" id="o-price" value="${c.ask}" required></label>
     <label>預計交車日<input type="date" id="o-eta" value="${isoIn(addD(D.today, 10))}"></label>
     <label>&nbsp;</label>
-    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並推播給全體員工。</p>'}
+    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並通知管理員、業務和行政。</p>'}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">確認收訂</button></div>
   </form>`;
 }
