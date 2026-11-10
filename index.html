@@ -175,6 +175,7 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .bind{border-radius:8px;padding:10px 12px;font-size:13px;display:flex;flex-direction:column;gap:8px}
 .bind.no{background:var(--accent-soft)}.bind.yes{background:var(--ok-soft)}
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:grid;place-items:center;z-index:40;padding:12px}.lightbox img{max-width:100%;max-height:88vh;border-radius:6px}
+.chg{padding:6px 10px;opacity:.45}.chg[aria-pressed="true"]{opacity:1;background:#f5c518;border-color:#d4a800;color:#222}.chg-i{font-size:11px;margin-left:2px}
 </style>
 </head>
 <body>
@@ -280,7 +281,7 @@ function normalize() {
   (D.prep || []).forEach(p => { const j = PREP_ITEMS.indexOf(p['項目']); if (j < 0) return; const a = PREPS[p['車輛編號']] = PREPS[p['車輛編號']] || blankPrep();
     a[j] = { st: p['狀態'] || '待處理', who: p['負責人'], date: p['排定日'], note: p['備註'], photos: p.photoUrls || [], by: p['更新人'], time: p['更新時間'] }; });
   CHECKS = {};
-  D.checks.forEach(c => { (CHECKS[c['日期']] = CHECKS[c['日期']] || { by: c['點車人'], time: c['時間'], items: {} }).items[c['車輛編號']] = { s: c['狀態'], reason: c['原因'], note: c['備註'] }; });
+  D.checks.forEach(c => { (CHECKS[c['日期']] = CHECKS[c['日期']] || { by: c['點車人'], time: c['時間'], items: {} }).items[c['車輛編號']] = { s: c['狀態'], reason: c['原因'], note: c['備註'], c: c['充電'] === '是' }; });
   if (!boardMonth) boardMonth = ym(D.today);
   if (!bonusMonth) bonusMonth = ym(D.today);
   draft = null;
@@ -377,7 +378,7 @@ function carForm(c, opt = {}) {
     <label>管理人${sel('f-mgr', ['', ...SALES(), '公司'], c.manager)}</label>` : ''}
     ${boss ? `<label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="f-official" ${c.official ? 'checked' : ''}> 公務車（不出售，只列入每日點車）</label>` : ''}
     <label class="full">備註<input type="text" id="f-note" value="${esc(c.note)}"></label>
-    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並通知管理員、業務和行政。</p>` : ''}
+    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並推播給全體員工。</p>` : ''}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存' : '送出入庫'}</button></div>
   </form>`;
 }
@@ -400,7 +401,7 @@ function orderForm(c) {
     <label>成交價<input type="number" id="o-price" value="${c.ask}" required></label>
     <label>預計交車日<input type="date" id="o-eta" value="${isoIn(addD(D.today, 10))}"></label>
     <label>&nbsp;</label>
-    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並通知管理員、業務和行政。</p>'}
+    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並推播給全體員工。</p>'}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">確認收訂</button></div>
   </form>`;
 }
@@ -942,9 +943,9 @@ function startDraft() {
   draft = {};
   CARS.filter(inLot).forEach(c => {
     const t = CHECKS[today]?.items[c.id];
-    if (t) { draft[c.id] = { s: t.s, reason: t.reason, note: t.note }; return; }
+    if (t) { draft[c.id] = { s: t.s, reason: t.reason, note: t.note, c: !!t.c }; return; }
     let prev = null; for (const d of Object.keys(CHECKS).sort().reverse()) { if (d < today && CHECKS[d].items[c.id]) { prev = CHECKS[d].items[c.id]; break; } }
-    draft[c.id] = prev && prev.s === '外出' ? { s: '外出', reason: prev.reason, note: prev.note } : { s: '在店', reason: '', note: '' };
+    draft[c.id] = prev && prev.s === '外出' ? { s: '外出', reason: prev.reason, note: prev.note, c: false } : { s: '在店', reason: '', note: '', c: false };
   });
 }
 function outStreak(c) { let n = 0, r = ''; for (const d of Object.keys(CHECKS).sort().reverse()) { if (d >= D.today) continue; const it = CHECKS[d].items[c.id]; if (!it) continue; if (it.s === '外出') { n++; r = r || it.reason; } else break; } return { n, r }; }
@@ -952,7 +953,7 @@ function renderCount() {
   if (!draft) startDraft();
   const today = D.today, done = CHECKS[today];
   const cars = CARS.filter(inLot).sort((a, b) => a.inDate.localeCompare(b.inDate));
-  const n = { 在店: 0, 外出: 0, 找不到: 0 }; cars.forEach(c => n[draft[c.id].s]++);
+  const n = { 在店: 0, 外出: 0, 找不到: 0, 充電: 0 }; cars.forEach(c => { n[draft[c.id].s]++; if (draft[c.id].c) n['充電']++; });
   const days = []; for (let i = histDays - 1; i >= 0; i--) days.push(addD(today, -i));
   const can = D.me.isSales || canAll();
   return `
@@ -973,15 +974,16 @@ function renderCount() {
         <div class="ctl">${can ? `<div class="seg" role="group" aria-label="${esc(c.plate)}">
           <button class="in" data-cs="${c.id}|在店" aria-pressed="${d.s === '在店'}">在店</button>
           <button class="out" data-cs="${c.id}|外出" aria-pressed="${d.s === '外出'}">外出</button>
-          <button class="miss" data-cs="${c.id}|找不到" aria-pressed="${d.s === '找不到'}">找不到</button></div>` : `<span class="small">${d.s}</span>`}
+          <button class="miss" data-cs="${c.id}|找不到" aria-pressed="${d.s === '找不到'}">找不到</button></div>
+          <button class="btn chg" data-cc="${c.id}" aria-pressed="${!!d.c}" aria-label="充電中" title="充電中">⚡</button>` : `<span class="small">${d.s}${d.c ? ' ⚡' : ''}</span>`}
           ${status(c) === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button>` : ''}</div>
         ${d.s === '外出' && can ? `<div class="extra"><select data-cr="${c.id}" aria-label="外出原因">${D.outReasons.map(r => `<option ${d.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
           <input type="text" data-cn="${c.id}" value="${esc(d.note || '')}" placeholder="地點／預計回店（選填）" style="flex:1;min-width:150px" aria-label="外出備註"></div>` : ''}
-        ${d.s === '找不到' ? '<div class="extra small" style="color:var(--warn)">送出後請告知主管</div>' : ''}
+        ${d.s === '找不到' ? '<div class="extra small" style="color:var(--warn)">送出後會立即通知主管</div>' : ''}
       </div>`;
     }).join('')}</div>
   </section>
-  ${can ? `<div class="sticky-bar"><span class="small">在店 <b>${n['在店']}</b>・外出 <b>${n['外出']}</b>・找不到 <b>${n['找不到']}</b></span><button class="btn acc" data-csubmit>${done ? '更新點車' : '送出點車'}</button></div>` : ''}
+  ${can ? `<div class="sticky-bar"><span class="small">在店 <b>${n['在店']}</b>・外出 <b>${n['外出']}</b>・找不到 <b>${n['找不到']}</b>・⚡充電 <b>${n['充電']}</b></span><button class="btn acc" data-csubmit>${done ? '更新點車' : '送出點車'}</button></div>` : ''}
   <section class="panel sec hist">
     <div class="row" style="justify-content:space-between"><h3 style="font-size:16px">點車紀錄</h3>
       <div class="filters">${[10, 30].map(x => `<button class="chip" data-hd="${x}" aria-pressed="${histDays === x}">近 ${x} 天</button>`).join('')}</div></div>
@@ -990,9 +992,9 @@ function renderCount() {
         ${days.map(d => `<th class="${CHECKS[d] ? '' : 'nc'}">${md(d)}<div class="small" style="font-weight:400">${CHECKS[d] ? esc(CHECKS[d].by) : '未點'}</div></th>`).join('')}</tr></thead>
       <tbody>${CARS.filter(c => inLot(c) || days.some(d => CHECKS[d]?.items[c.id])).sort((a, b) => a.inDate.localeCompare(b.inDate)).map((c, i) => `<tr>
         <td class="l mono">${i + 1}</td><td class="l mono">${c.inDate}</td><td class="l mono">${esc(c.year)}</td><td class="pin"><b>${esc(c.model)}</b></td><td class="l mono">${esc(c.plate)}</td><td class="l">${esc(c.color)}</td><td class="l">${belong(c)}</td>
-        ${days.map(d => { const it = CHECKS[d]?.items[c.id]; return `<td>${!it ? '<span class="muted">·</span>' : it.s === '在店' ? '<span class="ok">✓</span>' : it.s === '外出' ? `<span class="o" title="${esc(it.note)}">${esc(it.reason)}</span>` : '<span class="x">找不到</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody>
+        ${days.map(d => { const it = CHECKS[d]?.items[c.id]; return `<td>${!it ? '<span class="muted">·</span>' : it.s === '在店' ? '<span class="ok">✓</span>' : it.s === '外出' ? `<span class="o" title="${esc(it.note)}">${esc(it.reason)}</span>` : '<span class="x">找不到</span>'}${it && it.c ? '<span class="chg-i" title="充電">⚡</span>' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody>
     </table></div>
-    <p class="small muted" style="margin:0">✓ 在店・橘字為外出原因・「未點」表示那天沒有人點車。往右滑時「車型」固定在左邊。</p>
+    <p class="small muted" style="margin:0">✓ 在店・橘字為外出原因・⚡ 當天有充電・「未點」表示那天沒有人點車。往右滑時「車型」固定在左邊。</p>
   </section>`;
 }
 
@@ -1226,9 +1228,10 @@ document.addEventListener('click', async e => {
     openModal(carForm(null, { trade: { brand: b || '', model: m.join(' '), year: x.trade.year, km: x.trade.km, cost: x.trade.ask } })); pendingTrade = x.id; return; }
   if (ds.tradelost) { await act({ action: 'setTrade', id: ds.tradelost, status: '未成交' }, t); return; }
   if (ds.cs) { const [id, st] = ds.cs.split('|'); draft[id].s = st; if (st === '外出' && !draft[id].reason) draft[id].reason = D.outReasons[0]; render(); return; }
+  if (ds.cc) { draft[ds.cc].c = !draft[ds.cc].c; render(); return; }
   if (ds.allin !== undefined) { Object.values(draft).forEach(d => d.s = '在店'); render(); return; }
   if (ds.hd) { histDays = +ds.hd; render(); return; }
-  if (ds.csubmit !== undefined) { await act({ action: 'submitCheck', items: Object.entries(draft).map(([id, d]) => ({ id, s: d.s, reason: d.reason, note: d.note })) }, t); return; }
+  if (ds.csubmit !== undefined) { await act({ action: 'submitCheck', items: Object.entries(draft).map(([id, d]) => ({ id, s: d.s, reason: d.reason, note: d.note, c: !!d.c })) }, t); return; }
 });
 document.addEventListener('input', e => {
   const id = e.target.id;
