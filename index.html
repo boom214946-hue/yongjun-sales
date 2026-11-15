@@ -117,6 +117,17 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .form2 input,.form2 select{font-weight:400;color:var(--fg);width:100%}
 .form2 .full{grid-column:1/-1}
 .form2 input[type=checkbox]{width:auto;flex:none}
+.form2 label.vchk{flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-weight:700;font-size:14px;border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer}
+.form2 label.vchk:has(input:checked){background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.vcars{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;padding:2px}
+.form2 label.vcar{flex-direction:row;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font-weight:400;font-size:14px;cursor:pointer;line-height:1.35}
+.form2 label.vcar input,.form2 label.vchk input{width:22px;height:22px;flex:none;accent-color:var(--accent);margin:0}
+.form2 label.vcar .vn{flex:1;min-width:0}
+.form2 label.vcar .vp{font-family:var(--f-mono);font-weight:700;white-space:nowrap}
+.form2 label.vcar:has(input:checked){background:var(--accent-soft);border:2px solid var(--accent);padding:10.5px 11.5px}
+.form2 label.vcar:has(input:checked) .vn b::after{content:'  ✓ 已選';color:var(--accent);font-size:12px}
+.picked{font-size:13px;font-weight:700;padding:8px 10px;border-radius:8px;background:var(--surface2);color:var(--muted)}
+.picked.on{background:var(--accent-soft);color:var(--accent)}
 .modal textarea{width:100%;box-sizing:border-box}
 @media (max-width:420px){.form2{grid-template-columns:1fr}}
 .calc{background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px}
@@ -276,7 +287,7 @@ function normalize() {
   PROGRESS = (D.progress || []).map(p => ({ orderId: p['訂單編號'], stage: +p['階段'], note: p['說明'], photos: p.photoUrls || [], by: p['回報人'], time: p['時間'], push: p['推播'] }));
   VISITS = D.visits.map(v => ({ id: v['編號'], date: v['日期'], cust: v['客戶'], type: v['來源'], sales: v['接待業務'], purposes: (v['來意'] || '').split('＋').filter(Boolean),
     carIds: (v['看車編號'] || '').split(',').filter(Boolean), trade: v['估車車款'] ? { car: v['估車車款'], year: v['估車年份'], km: v['估車里程'], ask: N(v['期望價']) } : null,
-    tradeStatus: v['估車狀態'], note: v['備註'] }));
+    tradeStatus: v['估車狀態'], note: v['備註'], created: v['建立時間'] || '', buyCar: v['收購車輛編號'] || '' }));
   PREPS = {};
   (D.prep || []).forEach(p => { const j = PREP_ITEMS.indexOf(p['項目']); if (j < 0) return; const a = PREPS[p['車輛編號']] = PREPS[p['車輛編號']] || blankPrep();
     a[j] = { st: p['狀態'] || '待處理', who: p['負責人'], date: p['排定日'], note: p['備註'], photos: p.photoUrls || [], by: p['更新人'], time: p['更新時間'] }; });
@@ -999,28 +1010,65 @@ function renderCount() {
 }
 
 // ===== 來客紀錄 =====
-function visitForm(pre) {
-  const stock = CARS.filter(c => status(c) === '在庫');
-  const trade = pre === 'trade';
-  return `<h3>登記來店客人</h3>
-  <form id="vf" class="form2">
-    <label>日期<input type="date" id="c-date" value="${isoIn(D.today)}" required></label>
-    <label>接待業務${canAll() ? `<select id="c-sales"><option value="">${esc(D.me.en)}</option>${SALES().map(s => `<option>${s}</option>`).join('')}</select>` : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
-    <label>客戶稱呼<input type="text" id="c-cust" placeholder="陳先生" required></label>
-    <label>來源<select id="c-type">${D.sources.map(x => `<option>${x}</option>`).join('')}</select></label>
+// 來客紀錄：業務只能在登記當天修改自己的；主管、行政不限
+const canEditVisit = x => canAll() || (x.sales === D.me.en && String(x.created).slice(0, 10) === D.today);
+const vcarName = c => `${String(c.year).slice(0, 4)} ${c.brand} ${c.model}`;
+function visitForm(pre, v) {
+  const edit = !!v;
+  v = v || null;
+  const trade = edit ? !!v.trade : pre === 'trade';
+  const see = edit ? v.purposes.includes('看車') : !trade;
+  const picked = edit ? v.carIds : (pre && pre !== 'trade' ? [pre] : []);
+  const stock = CARS.filter(c => status(c) === '在庫' || picked.includes(c.id)).sort((a, b) => a.inDate.localeCompare(b.inDate));
+  const salesV = edit ? v.sales : '';
+  return `<h3>${edit ? '修改來客紀錄' : '登記來店客人'}</h3>
+  <form id="vf" class="form2" data-id="${edit ? v.id : ''}">
+    <label>日期<input type="date" id="c-date" value="${isoIn(edit ? v.date : D.today)}" required></label>
+    <label>接待業務${canAll() ? `<select id="c-sales"><option value="">${esc(D.me.en)}</option>${[...new Set([...SALES(), ...(salesV && salesV !== D.me.en ? [salesV] : [])])].map(s => `<option ${s === salesV ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>` : `<input type="text" value="${esc(edit ? v.sales : D.me.en)}" disabled>`}</label>
+    <label>客戶稱呼<input type="text" id="c-cust" placeholder="陳先生" value="${edit ? esc(v.cust) : ''}" required></label>
+    <label>來源<select id="c-type">${D.sources.map(x => `<option ${edit && v.type === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     <div class="full"><div class="label" style="margin-bottom:6px">來意（可複選）</div>
-      <div class="row small"><label class="row" style="gap:6px"><input type="checkbox" id="c-p-see" ${trade ? '' : 'checked'}> 看車</label>
-      <label class="row" style="gap:6px"><input type="checkbox" id="c-p-trade" ${trade ? 'checked' : ''}> 估車（客人要賣車／換車）</label></div></div>
-    <div class="full" id="c-see-box" ${trade ? 'hidden' : ''}><div class="label" style="margin-bottom:6px">看了哪些車（可複選）</div>
-      <div style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:4px">
-      ${stock.map(c => `<label class="row small" style="gap:6px"><input type="checkbox" name="c-car" value="${c.id}" ${c.id === pre ? 'checked' : ''}> ${esc(label(c))} <span class="mono muted">${esc(c.plate)}</span></label>`).join('')}</div></div>
+      <div class="row"><label class="vchk"><input type="checkbox" id="c-p-see" ${see ? 'checked' : ''}> 看車</label>
+      <label class="vchk"><input type="checkbox" id="c-p-trade" ${trade ? 'checked' : ''}> 估車（客人要賣車／換車）</label></div></div>
+    <div class="full sec" id="c-see-box" ${see ? '' : 'hidden'} style="gap:6px"><div class="label">看了哪些車（可複選，點整列就能勾選）</div>
+      <input type="text" id="c-sq" placeholder="輸入車牌或車型快速找車" aria-label="找車">
+      <div class="picked" id="c-picked"></div>
+      <div class="vcars">
+      ${stock.map(c => `<label class="vcar" data-k="${esc((c.plate + ' ' + c.brand + ' ' + c.model + ' ' + c.color + ' ' + c.year).toLowerCase())}"><input type="checkbox" name="c-car" value="${c.id}" data-n="${esc(vcarName(c) + ' ' + c.plate)}" ${picked.includes(c.id) ? 'checked' : ''}>
+        <span class="vn"><b>${esc(vcarName(c))}</b><br><span class="small muted">${esc(c.color) || '—'}・${esc(c.km) || '—'}</span></span><span class="vp">${esc(c.plate)}</span></label>`).join('') || '<p class="small muted" style="margin:0">目前沒有可收訂的車</p>'}</div></div>
     <div class="full form2" id="c-trade-box" ${trade ? '' : 'hidden'} style="background:var(--surface2);border-radius:8px;padding:10px">
-      <label>客人的車（廠牌 車型）<input type="text" id="t-car" placeholder="TOYOTA WISH"></label>
-      <label>年份<input type="text" id="t-year" placeholder="2015"></label>
-      <label>里程<input type="text" id="t-km" placeholder="12萬"></label>
-      <label>客人期望價<input type="number" id="t-ask" placeholder="250000"></label></div>
-    <label class="full">需求／備註<input type="text" id="c-note" placeholder="預算、用途、下次聯絡時間"></label>
-    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">登記</button></div>
+      <label>客人的車（廠牌 車型）<input type="text" id="t-car" placeholder="TOYOTA WISH" value="${edit && v.trade ? esc(v.trade.car) : ''}"></label>
+      <label>年份<input type="text" id="t-year" placeholder="2015" value="${edit && v.trade ? esc(v.trade.year) : ''}"></label>
+      <label>里程<input type="text" id="t-km" placeholder="12萬" value="${edit && v.trade ? esc(v.trade.km) : ''}"></label>
+      <label>客人期望價<input type="number" id="t-ask" placeholder="250000" value="${edit && v.trade && v.trade.ask != null ? v.trade.ask : ''}"></label></div>
+    <label class="full">需求／備註<input type="text" id="c-note" placeholder="預算、用途、下次聯絡時間" value="${edit ? esc(v.note) : ''}"></label>
+    ${edit ? '' : '<p class="full small muted" style="margin:0">登記錯了沒關係：當天可以到「來客紀錄 → 來客明細」按「修改」更正或刪除。</p>'}
+    <div class="full row" style="justify-content:space-between">${edit ? `<button type="button" class="btn danger" data-vdel="${v.id}">刪除這筆</button>` : '<span></span>'}
+      <div class="row"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存修改' : '登記'}</button></div></div>
+  </form>`;
+}
+function updPicked() {
+  const el = $('#c-picked'); if (!el) return;
+  const on = [...document.querySelectorAll('input[name="c-car"]:checked')].map(x => x.dataset.n);
+  el.className = 'picked' + (on.length ? ' on' : '');
+  el.textContent = on.length ? `已選 ${on.length} 台：${on.join('、')}` : '還沒選車，請點下方的車輛';
+}
+function openVisit(pre, v) { openModal(visitForm(pre, v)); updPicked(); }
+// 估車的車已經先用「新增採購」入庫：選車源表的那台車連起來
+function tradeLinkForm(x) {
+  const words = String(x.trade.car).toUpperCase().split(/\s+/).filter(w => w.length > 1);
+  const linked = new Set(VISITS.map(v => v.buyCar).filter(Boolean));
+  const cars = CARS.filter(c => !c.official && !linked.has(c.id)).map(c => ({ c, hit: words.some(w => (c.brand + ' ' + c.model).toUpperCase().includes(w)) }))
+    .sort((a, b) => b.hit - a.hit || b.c.inDate.localeCompare(a.c.inDate));
+  return `<h3>這筆估車已經入庫了</h3>
+  <div class="calc">客人 <b>${esc(x.cust)}</b>・${esc(x.sales)}・估車：${tradeTxt(x.trade)}</div>
+  <form id="tlf" class="form2" data-id="${x.id}">
+    <div class="full sec" style="gap:6px"><div class="label">選車源表裡的那台車（車款相符的排在最前面）</div>
+      <input type="text" id="c-sq" placeholder="輸入車牌或車型快速找車" aria-label="找車">
+      <div class="vcars">${cars.map(({ c, hit }) => `<label class="vcar" data-k="${esc((c.plate + ' ' + c.brand + ' ' + c.model + ' ' + c.color + ' ' + c.year).toLowerCase())}"><input type="radio" name="tl-car" value="${c.id}" required>
+        <span class="vn"><b>${esc(vcarName(c))}</b><br><span class="small muted">${esc(c.color) || '—'}・入庫 ${md(c.inDate)}・採購 ${esc(c.buyer)}${hit ? '・<span style="color:var(--accent);font-weight:700">車款相符</span>' : ''}</span></span><span class="vp">${esc(c.plate)}</span></label>`).join('') || '<p class="small muted" style="margin:0">車源表沒有可以連結的車</p>'}</div></div>
+    <p class="full small muted" style="margin:0">確認後這筆估車改成「已收購」並連到這台車，不會再新增車輛，分點表收車也不會再 +1。</p>
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">確認連結</button></div>
   </form>`;
 }
 function carVisits(c) {
@@ -1063,18 +1111,18 @@ function renderVisits() {
   <section class="panel sec"><h3 style="font-size:16px">估車客人</h3>
     <div class="tbl-wrap"><table style="min-width:720px"><thead><tr><th>日期</th><th>客人</th><th>業務</th><th>來源</th><th>客人的車</th><th>備註</th><th>狀態</th><th></th></tr></thead>
     <tbody>${trades.map(x => `<tr><td class="mono">${md(x.date)}</td><td><b>${esc(x.cust)}</b></td><td>${esc(x.sales)}</td><td class="small">${esc(x.type)}</td><td class="small">${tradeTxt(x.trade)}</td><td class="small muted">${esc(x.note)}</td>
-      <td>${x.tradeStatus === '已收購' ? '<span class="pill ready">已收購</span>' : x.tradeStatus === '未成交' ? '<span class="pill done">未成交</span>' : '<span class="pill active">追蹤中</span>'}</td>
-      <td>${x.tradeStatus === '追蹤中' ? `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn acc" data-tradebuy="${x.id}">收購入庫</button><button class="btn" data-tradelost="${x.id}">未成交</button></div>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">還沒有估車紀錄</td></tr>'}</tbody></table></div>
-    <p class="small muted" style="margin:0">「收購入庫」會打開新增採購並帶入車款；送出後分點表收車 +1，這筆估車改成已收購。</p></section>
+      <td>${x.tradeStatus === '已收購' ? `<span class="pill ready">已收購</span>${x.buyCar && carById(x.buyCar) ? `<div class="small mono muted">${esc(carById(x.buyCar).plate)}</div>` : ''}` : x.tradeStatus === '未成交' ? '<span class="pill done">未成交</span>' : '<span class="pill active">追蹤中</span>'}</td>
+      <td>${x.tradeStatus === '追蹤中' ? `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn acc" data-tradebuy="${x.id}">收購入庫</button><button class="btn" data-tradelost="${x.id}">未成交</button>${canAll() || x.sales === D.me.en ? `<button class="btn" data-tradelink="${x.id}">已入庫</button>` : ''}</div>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">還沒有估車紀錄</td></tr>'}</tbody></table></div>
+    <p class="small muted" style="margin:0">「收購入庫」會打開新增採購並帶入車款；送出後分點表收車 +1，這筆估車改成已收購。如果車子已經先用「新增採購」入庫了，請按「已入庫」選那台車，不會重複入庫、收車也不會再 +1。</p></section>
   <section class="panel sec"><h3 style="font-size:16px">在庫車輛熱度</h3>
     <div class="tbl-wrap"><table style="min-width:620px"><thead><tr><th>車輛</th><th>庫存天</th><th>近30天看車</th><th>累計</th><th>最近看車</th><th>誰的客人</th><th></th></tr></thead>
     <tbody>${stock.map(r => `<tr><td><b>${esc(label(r.c))}</b> <span class="mono small muted">${esc(r.c.plate)}</span></td><td class="mono">${r.d}</td><td class="mono">${r.n30}</td>
       <td>${r.n ? `<button class="chip" data-vlist="${r.c.id}">${r.n} 組</button>` : '<span class="muted">0</span>'}</td><td class="mono small">${r.last ? md(r.last) : '—'}</td><td class="small">${esc(r.who.join('、')) || '—'}</td><td>${tag(r)}</td></tr>`).join('')}</tbody></table></div></section>
   <section class="panel sec">
     <div class="row" style="justify-content:space-between"><h3 style="font-size:16px">來客明細</h3><input type="text" id="vq" placeholder="搜尋客人、業務、車型" value="${esc(visQ)}" aria-label="搜尋來客"></div>
-    <div class="tbl-wrap"><table style="min-width:680px"><thead><tr><th>日期</th><th>客人</th><th>業務</th><th>來源</th><th>來意</th><th>看了哪些車／估車</th><th>備註</th></tr></thead>
+    <div class="tbl-wrap"><table style="min-width:680px"><thead><tr><th>日期</th><th>客人</th><th>業務</th><th>來源</th><th>來意</th><th>看了哪些車／估車</th><th>備註</th><th></th></tr></thead>
     <tbody>${log.map(x => `<tr><td class="mono">${md(x.date)}</td><td><b>${esc(x.cust)}</b></td><td>${esc(x.sales)}</td><td class="small">${esc(x.type)}</td><td class="small">${x.purposes.join('＋')}</td>
-      <td class="small">${[x.carIds.map(id => { const c = carById(id); return c ? esc(label(c)) : ''; }).filter(Boolean).join('、'), x.trade ? '估：' + tradeTxt(x.trade) : ''].filter(Boolean).join('<br>')}</td><td class="small muted">${esc(x.note)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">沒有紀錄</td></tr>'}</tbody></table></div></section>`;
+      <td class="small">${[x.carIds.map(id => { const c = carById(id); return c ? esc(label(c)) : ''; }).filter(Boolean).join('、'), x.trade ? '估：' + tradeTxt(x.trade) : ''].filter(Boolean).join('<br>')}</td><td class="small muted">${esc(x.note)}</td><td>${canEditVisit(x) ? `<button class="btn" data-vedit="${x.id}">修改</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">沒有紀錄</td></tr>'}</tbody></table></div></section>`;
 }
 
 // ===== 分點表 =====
@@ -1142,15 +1190,15 @@ function renderBonus() {
     <thead><tr><th>交車日</th><th>車輛</th><th>客人</th><th style="text-align:right">成交價</th><th style="text-align:right">底價</th><th style="text-align:right">差額</th><th>銷售</th><th style="text-align:right">試算</th><th>核定</th><th>採購人</th><th style="text-align:right">試算</th><th>核定</th></tr></thead>
     <tbody>${list.map(o => { const b = bonusOf(o); if (!b) return `<tr><td colspan="12" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const c = b.c, comp = !SALES().includes(o.seller);
       return `<tr style="${b.below ? 'background:var(--warn-soft)' : ''}"><td class="mono">${md(o.delivered)}<div class="small muted">收訂 ${md(o.date)}</div></td><td><b>${esc(label(c))}</b><div class="mono small muted">${esc(c.plate)}</div></td><td>${esc(o.cust)}</td>
-      <td class="mono" style="text-align:right">${money(o.price)}</td><td class="mono" style="text-align:right">${money(c.floor)}</td><td class="mono" style="text-align:right;color:${b.below ? 'var(--warn)' : 'var(--ok)'}">${b.diff >= 0 ? '+' : ''}${money(b.diff)}</td>
+      <td class="mono" style="text-align:right"><input type="number" data-bp="${o.id}" value="${o.price ?? ''}" aria-label="成交價" title="主管可修改成交價" style="width:104px;text-align:right"></td><td class="mono" style="text-align:right">${money(c.floor)}</td><td class="mono" style="text-align:right;color:${b.below ? 'var(--warn)' : 'var(--ok)'}">${b.diff >= 0 ? '+' : ''}${money(b.diff)}</td>
       <td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${comp ? '—' : inp(o, 'sale', b.sale)}</td>
       <td>${esc(c.buyer)}${b.buyer ? `<div class="small muted">採購 ${money(c.cost) || '未填'}</div>` : ''}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">低於底價・無</span>' : money(b.buy)}</td><td>${b.buyer && !b.below ? inp(o, 'buy', b.buy) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="12" class="muted">這個月沒有交車</td></tr>'}</tbody></table></div></section>
   <section class="panel sec"><h3 style="font-size:16px">已收訂、還沒交車（交車後列入）</h3>
     <div class="tbl-wrap"><table style="min-width:720px;font-size:13.5px"><thead><tr><th>收訂日</th><th>車輛</th><th>銷售</th><th style="text-align:right">成交價／底價</th><th style="text-align:right">銷售試算</th><th>採購人</th><th style="text-align:right">採購試算</th><th>預計交車</th></tr></thead>
     <tbody>${waiting.map(o => { const b = bonusOf(o); const c = carById(o.carId); if (!b) return `<tr><td colspan="8" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const comp = !SALES().includes(o.seller);
-      return `<tr><td class="mono">${md(o.date)}</td><td><b>${esc(label(c))}</b> <span class="mono small muted">${esc(c.plate)}</span></td><td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${money(o.price)} / ${money(c.floor)}</td>
+      return `<tr><td class="mono">${md(o.date)}</td><td><b>${esc(label(c))}</b> <span class="mono small muted">${esc(c.plate)}</span></td><td>${esc(o.seller)}</td><td class="mono" style="text-align:right;white-space:nowrap"><input type="number" data-bp="${o.id}" value="${o.price ?? ''}" aria-label="成交價" title="主管可修改成交價" style="width:104px;text-align:right"> / ${money(c.floor)}</td>
       <td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${esc(c.buyer)}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">無</span>' : money(b.buy)}</td><td class="mono">${o.eta ? md(o.eta) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">沒有</td></tr>'}</tbody></table></div></section>
-  <p class="small muted" style="margin:0">銷售獎金＝保底獎金＋（成交價−底價）×30%，低於底價由主管斟酌；公司車（管理員收訂）沒有銷售獎金。採購獎金只算業務採購的車：採購金額 50 萬以下保底 1,000、以上 3,000，再加（成交價−底價）×20%；低於底價沒有採購獎金。核定欄改過的以核定為準。</p>`;
+  <p class="small muted" style="margin:0">銷售獎金＝保底獎金＋（成交價−底價）×30%，低於底價由主管斟酌；公司車（管理員收訂）沒有銷售獎金。採購獎金只算業務採購的車：採購金額 50 萬以下保底 1,000、以上 3,000，再加（成交價−底價）×20%；低於底價沒有採購獎金。核定欄改過的以核定為準。成交價欄可以直接修改（業務填錯時更正），改完獎金試算會重算。</p>`;
 }
 
 // ===== 畫面 =====
@@ -1222,10 +1270,13 @@ document.addEventListener('click', async e => {
   if (ds.copy) { const el = $('#' + ds.copy); el.select(); el.setSelectionRange(0, 99999); let ok = false; try { await navigator.clipboard.writeText(el.value); ok = true; } catch (x) { try { ok = document.execCommand('copy'); } catch (y) {} } toast(ok ? '已複製' : '請長按文字框手動複製'); return; }
   if (ds.cancel) { const o = ORDERS.find(x => x.id === ds.cancel); openModal(`<h3>確定退訂？</h3><p style="margin:0">${esc(o.label)}（${esc(o.plate)}）・客戶 ${esc(o.cust)}</p><p class="small muted" style="margin:0">退訂後車輛回到可收訂，分點表 ${rowOf(o.seller)} 的訂車數扣回。</p><div class="row" style="justify-content:flex-end"><button class="btn" data-mclose>取消</button><button class="btn danger" data-cancelok="${o.id}">確定退訂</button></div>`); return; }
   if (ds.cancelok) { await act({ action: 'cancelOrder', id: ds.cancelok }, t); return; }
-  if (ds.visit !== undefined) { openModal(visitForm(ds.visit)); return; }
+  if (ds.visit !== undefined) { openVisit(ds.visit); return; }
+  if (ds.vedit) { const v = VISITS.find(x => x.id === ds.vedit); if (v) openVisit('', v); return; }
+  if (ds.vdel) { if (confirm('確定刪除這筆來客紀錄？刪除後看車組數、成交率會一起更新。')) await act({ action: 'deleteVisit', id: ds.vdel }, t); return; }
   if (ds.vlist) { openModal(carVisits(carById(ds.vlist))); return; }
   if (ds.tradebuy) { const x = VISITS.find(v => v.id === ds.tradebuy); pendingTrade = x.id; const [b, ...m] = x.trade.car.split(' ');
     openModal(carForm(null, { trade: { brand: b || '', model: m.join(' '), year: x.trade.year, km: x.trade.km, cost: x.trade.ask } })); pendingTrade = x.id; return; }
+  if (ds.tradelink) { const x = VISITS.find(v => v.id === ds.tradelink); if (x) openModal(tradeLinkForm(x)); return; }
   if (ds.tradelost) { await act({ action: 'setTrade', id: ds.tradelost, status: '未成交' }, t); return; }
   if (ds.cs) { const [id, st] = ds.cs.split('|'); draft[id].s = st; if (st === '外出' && !draft[id].reason) draft[id].reason = D.outReasons[0]; render(); return; }
   if (ds.cc) { draft[ds.cc].c = !draft[ds.cc].c; render(); return; }
@@ -1235,6 +1286,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('input', e => {
   const id = e.target.id;
+  if (id === 'c-sq') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('.vcar').forEach(l => { l.hidden = !!q && !l.dataset.k.includes(q); }); return; }
   if (id === 'sq' || id === 'vq' || id === 'svq') { if (id === 'sq') stockQ = e.target.value; else if (id === 'vq') visQ = e.target.value; else svQ = e.target.value; const pos = e.target.selectionStart; render(); const s = $('#' + id); s.focus(); s.setSelectionRange(pos, pos); }
 });
 document.addEventListener('change', async e => {
@@ -1259,10 +1311,12 @@ document.addEventListener('change', async e => {
   if (id === 'pphoto') { const files = [...t.files].slice(0, 8 - pendingPhotos.length); toast('照片處理中…');
     for (const f of files) { try { pendingPhotos.push(await compress(f)); } catch (x) {} }
     $('#pthumbs').innerHTML = pendingPhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join(''); toast(`已選 ${pendingPhotos.length} 張照片`); }
+  if (t.name === 'c-car') updPicked();
   if (id === 'c-p-see') $('#c-see-box').hidden = !t.checked;
   if (id === 'c-p-trade') $('#c-trade-box').hidden = !t.checked;
   if (t.dataset.cr) draft[t.dataset.cr].reason = t.value;
   if (t.dataset.cn) draft[t.dataset.cn].note = t.value;
+  if (t.dataset.bp) { const o = ORDERS.find(x => x.id === t.dataset.bp); if (!t.value || !confirm(`把「${o.label}」的成交價改成 ${money(+t.value)}？\n獎金試算會跟著重算（已手動核定的金額不會變）。`)) { render(); return; } await act({ action: 'setPrice', id: t.dataset.bp, value: t.value }); }
   if (t.dataset.bf) { const [oid, k] = t.dataset.bf.split('|'); await act({ action: 'setBonus', id: oid, kind: k, value: t.value }); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
@@ -1303,10 +1357,11 @@ document.addEventListener('submit', async e => {
   if (f.id === 'insf') await act({ action: 'updateCustomer', id: f.dataset.id, fields: { '本公司投保': '是', '保險公司': g('ins-co'), '保險類型': g('ins-ty'), '保險到期日': isoOut(g('ins-exp')) } }, btn);
   if (f.id === 'addcp') { const cid = f.dataset.id; const r = await act({ action: 'addCoupon', id: cid, text: g('ncp-t'), expire: isoOut(g('ncp-e')) }, btn); }
   if (f.id === 'mf') await act({ action: 'sendMessage', id: f.dataset.id, key: f.dataset.key, type: f.dataset.type, text: g('mtext'), image: msgImage || '' }, btn);
+  if (f.id === 'tlf') { const c = f.querySelector('input[name="tl-car"]:checked'); if (!c) { toast('請選一台車'); return; } await act({ action: 'linkTrade', id: f.dataset.id, carId: c.value }, btn); }
   if (f.id === 'vf') {
     const visit = { date: isoOut(g('c-date')), sales: g('c-sales'), customer: g('c-cust'), source: g('c-type'), see: $('#c-p-see').checked, trade: $('#c-p-trade').checked,
       carIds: [...document.querySelectorAll('input[name="c-car"]:checked')].map(x => x.value), tradeCar: g('t-car'), tradeYear: g('t-year'), tradeKm: g('t-km'), tradeAsk: g('t-ask'), note: g('c-note') };
-    await act({ action: 'addVisit', visit }, btn);
+    await act(f.dataset.id ? { action: 'updateVisit', id: f.dataset.id, visit } : { action: 'addVisit', visit }, btn);
   }
   if (f.id === 'tf' || f.id === 'basef') {
     const rows = ROWS().map(r => { const o = { row: r }; f.querySelectorAll(`input[data-r="${r}"]`).forEach(i => o[i.dataset.k] = i.value); return o; });
