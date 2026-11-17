@@ -224,6 +224,7 @@ if (location.hostname.endsWith('github.io') && !location.pathname.startsWith('/y
 // ===== 設定 =====
 const LIFF_ID = '2012275132-8PYWlQ0K';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzsewthHYW4Dpz-D-pr4xrmqwK5wKo22B1lEUzReJsa9mzLlutbI5k4sYspnoygb6OIxg/exec';
+const CONTRACT_URL = '';   // 合約系統的 LIFF 網址（例如 https://liff.line.me/2012275132-xxxxxxxx），填了車源表才會出現「簽合約」按鈕
 const START = '2026/11/01';   // 系統上線日：之前的年度數字放在試算表「年度基準」
 const BONUS = { saleRate: .3, buyRate: .2, buyBaseLow: 1000, buyBaseHigh: 3000, buyThreshold: 500000 };
 
@@ -267,6 +268,7 @@ async function act(payload, busyBtn) {
 }
 
 // ===== 資料 =====
+let pendingLic = null;
 let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {}, PROGRESS = [], selOrder = null, pendingPhotos = [];
 let page = 'stock', stockFilter = '庫存中', stockQ = '', boardMonth = '', bonusMonth = '', visQ = '', histDays = 10, draft = null, pendingTrade = null;
 const isBoss = () => D && D.me.isBoss;
@@ -280,7 +282,9 @@ const rowOf = name => SALES().includes(name) ? name : '公司車';
 function normalize() {
   CARS = D.cars.map(c => ({ id: c['編號'], inDate: c['進貨日'], plate: c['車牌'], brand: c['廠牌'], model: c['車型'], year: c['年份'],
     color: c['顏色'], km: c['里程'], cert: c['認證'], fc: c['廠證'], keys: c['鑰匙'], ask: N(c['開價']), floor: N(c['底價']),
-    bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), official: c['類別'] === '公務車', note: c['備註'] }));
+    bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), official: c['類別'] === '公務車', note: c['備註'],
+    vin: c['車身號碼'] || '', engineNo: c['引擎號碼'] || '', cc: c['排氣量'] || '', origin: c['產地'] || '', country: c['進口國'] || '',
+    lpDate: c['領牌日'] || '', ldDate: c['領照日'] || '', insDate: c['強制險到期日'] || '', hasLic: !!c.hasLic }));
   ORDERS = D.orders.map(o => ({ id: o['編號'], carId: o['車輛編號'], plate: o['車牌'], label: o['車款'], seller: o['收訂業務'], date: o['收訂日'],
     cust: o['客戶'], price: N(o['成交價']), eta: o['預計交車日'], status: o['狀態'], delivered: o['交車日'],
     fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'], stage: +o['整備階段'] || 0, token: o['客戶頁代碼'], code: o['綁定碼'], bound: !!o.bound }));
@@ -355,7 +359,7 @@ function renderStock() {
         <td>${out}${st === '公務車' ? '<span class="pill done">公務車</span>' : st === '在庫' ? '<span class="pill done">在庫</span>' : st === '已收訂' ? `<span class="pill active">${esc(o.seller)} 已收訂</span>` : `<span class="pill ready">${esc(o.seller)} 已交車</span>`}</td>
         <td><div class="row" style="gap:6px;flex-wrap:nowrap">
           ${isBoss() ? `<button class="btn" data-edit="${c.id}">${priced || c.official ? '修改' : '定價'}</button>` : ''}
-          ${st === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button><button class="btn acc" data-order="${c.id}" ${priced ? '' : 'disabled'}>收訂</button>`
+          ${st === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button><button class="btn" data-docs="${c.id}" title="車身號碼、引擎號碼、行照等，簽合約會自動帶入">${docsDone(c) ? '車籍' : '車籍 ⚠'}</button>${CONTRACT_URL ? `<button class="btn acc" data-contract="${c.id}" ${priced ? '' : 'disabled'}>簽合約</button><button class="btn" data-order="${c.id}" ${priced ? '' : 'disabled'} title="同業交易或不用合約時使用">收訂</button>` : `<button class="btn acc" data-order="${c.id}" ${priced ? '' : 'disabled'}>收訂</button>`}`
             : st === '已收訂' ? `<button class="btn pri" data-prepgo="${o.id}">整備／交車</button>` : ''}
         </div></td></tr>`;
     }).join('') || '<tr><td colspan="19" class="muted">沒有符合的車輛</td></tr>'}</tbody>
@@ -389,6 +393,7 @@ function carForm(c, opt = {}) {
     <label>管理人${sel('f-mgr', ['', ...SALES(), '公司'], c.manager)}</label>` : ''}
     ${boss ? `<label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="f-official" ${c.official ? 'checked' : ''}> 公務車（不出售，只列入每日點車）</label>` : ''}
     <label class="full">備註<input type="text" id="f-note" value="${esc(c.note)}"></label>
+    ${docsFields(c)}
     ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並推播給全體員工。</p>` : ''}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存' : '送出入庫'}</button></div>
   </form>`;
@@ -1201,6 +1206,36 @@ function renderBonus() {
   <p class="small muted" style="margin:0">銷售獎金＝保底獎金＋（成交價−底價）×30%，低於底價由主管斟酌；公司車（管理員收訂）沒有銷售獎金。採購獎金只算業務採購的車：採購金額 50 萬以下保底 1,000、以上 3,000，再加（成交價−底價）×20%；低於底價沒有採購獎金。核定欄改過的以核定為準。成交價欄可以直接修改（業務填錯時更正），改完獎金試算會重算。</p>`;
 }
 
+// ===== 第四階段：車籍資料（合約系統會自動帶入）=====
+const docsDone = c => !!(c.vin && c.hasLic);
+function docsFields(c) {
+  c = c || {};
+  return `<div class="full label" style="margin-top:4px">車籍資料（看行照填，簽合約會自動帶入）</div>
+    <label>車身號碼<input type="text" id="dc-vin" value="${esc(c.vin || '')}" placeholder="17 碼" style="text-transform:uppercase"></label>
+    <label>引擎號碼<input type="text" id="dc-eng" value="${esc(c.engineNo || '')}" style="text-transform:uppercase"></label>
+    <label>排氣量（cc）<input type="number" id="dc-cc" value="${esc(c.cc || '')}" placeholder="1595"></label>
+    <label>產地<select id="dc-origin"><option value=""></option>${['國產', '進口'].map(o => `<option ${c.origin === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+    <label>進口國<input type="text" id="dc-country" value="${esc(c.country || '')}" placeholder="德國"></label>
+    <label>領牌日<input type="date" id="dc-lp" value="${c.lpDate ? isoIn(c.lpDate) : ''}"></label>
+    <label>領照日<input type="date" id="dc-ld" value="${c.ldDate ? isoIn(c.ldDate) : ''}"></label>
+    <label>原強制險到期日<input type="date" id="dc-ins" value="${c.insDate ? isoIn(c.insDate) : ''}"></label>
+    <label class="full drop" for="dc-lic">${c.hasLic ? '✓ 已上傳前車主行照（重新拍照會取代）' : '＋ 拍攝前車主行車執照'}<input id="dc-lic" type="file" accept="image/*"></label>
+    <div class="full thumbs" id="dc-licth">${pendingLic ? `<img src="${pendingLic}" alt="行照">` : ''}</div>`;
+}
+function readDocs() {
+  const g = id => ($('#' + id) ? $('#' + id).value.trim() : '');
+  if (!$('#dc-vin')) return null;
+  const o = { vin: g('dc-vin'), engineNo: g('dc-eng'), cc: g('dc-cc'), origin: g('dc-origin'), country: g('dc-country'),
+    lpDate: isoOut(g('dc-lp')), ldDate: isoOut(g('dc-ld')), insDate: isoOut(g('dc-ins')) };
+  if (pendingLic) o.lic = pendingLic;
+  return o;
+}
+function docsModal(c) {
+  return `<h3>車籍資料・${esc(label(c))}（${esc(c.plate)}）</h3><form id="dcf" class="form2" data-id="${c.id}">${docsFields(c)}
+    <p class="full small muted" style="margin:0">前車主行照是合約附件，只存在公司雲端，不會公開。</p>
+    <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">儲存</button></div></form>`;
+}
+
 // ===== 畫面 =====
 function watermark() {
   const w = $('#wm'); if (page !== 'stock' || !D) { w.hidden = true; return; }
@@ -1229,12 +1264,14 @@ document.addEventListener('click', async e => {
   if (ds.reload !== undefined) { $('#view').innerHTML = '<div class="loading">讀取資料中…</div>'; await load(); return; }
   if (!D) return;
   if (ds.mclose !== undefined) { closeModal(); return; }
+  if (ds.docs) { pendingLic = null; openModal(docsModal(carById(ds.docs))); return; }
+  if (ds.contract) { location.href = CONTRACT_URL + (CONTRACT_URL.includes('?') ? '&' : '?') + 'car=' + encodeURIComponent(ds.contract); return; }
   if (ds.page) { page = ds.page; render(); window.scrollTo(0, 0); return; }
   if (ds.sf) { stockFilter = ds.sf; render(); return; }
-  if (ds.act === 'buy') { openModal(carForm(null)); return; }
+  if (ds.act === 'buy') { pendingLic = null; openModal(carForm(null)); return; }
   if (ds.act === 'targets') { const T = {}; D.targets.forEach(x => T[x['列']] = x); openModal('<h3>調整每月目標</h3>' + numTable('tf', ROWS(), (r, k) => (T[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
   if (ds.act === 'base') { const y = boardMonth.slice(0, 4), B = {}; D.base.filter(b => b['年度'] === y).forEach(b => B[b['列']] = b); openModal(`<h3>${y} 年度基準（上線前累計）</h3><p class="small muted" style="margin:0">系統上線（${START}）之前的年度累計數字，會加進分點表的「年度」欄。</p>` + numTable('basef', ROWS(), (r, k) => (B[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
-  if (ds.edit) { openModal(carForm(carById(ds.edit))); return; }
+  if (ds.edit) { pendingLic = null; openModal(carForm(carById(ds.edit))); return; }
   if (ds.order) { const c = carById(ds.order); openModal(orderForm(c)); updCalc(c); $('#o-price').addEventListener('input', () => updCalc(c)); $('#o-sales') && $('#o-sales').addEventListener('change', () => updCalc(c)); return; }
   if (ds.addcp !== undefined) { $('#d-cps').insertAdjacentHTML('beforeend', couponRow()); return; }
   if (ds.svt) { svTab = ds.svt; render(); return; }
@@ -1305,6 +1342,7 @@ document.addEventListener('change', async e => {
   if (t.dataset.pph && t.files.length) { const [cid, j] = t.dataset.pph.split('|'); toast('照片處理中…'); const ph = []; for (const f of [...t.files].slice(0, 4)) { try { ph.push(await compress(f)); } catch (x) {} } if (ph.length) await prepSave(cid, +j, { photos: ph }); }
   if (t.dataset.seekst) await act({ action: 'saveSeek', id: t.dataset.seekst, status: t.value });
   if (t.dataset.srcst) await act({ action: 'saveSource', id: t.dataset.srcst, status: t.value });
+  if (id === 'dc-lic' && t.files[0]) { try { pendingLic = await compress(t.files[0]); $('#dc-licth').innerHTML = `<img src="${pendingLic}" alt="行照">`; } catch (x) { toast('照片讀取失敗'); } }
   if (id === 'mimg' && t.files[0]) { try { msgImage = await compress(t.files[0]); $('#mthumb').innerHTML = `<img src="${msgImage}" alt="附圖">`; } catch (x) { toast('圖片讀取失敗'); } }
   if (id === 'nphoto') { const files = [...t.files].slice(0, 4 - notePhotos.length); for (const f of files) { try { notePhotos.push(await compress(f)); } catch (x) {} }
     $('#nthumbs').innerHTML = notePhotos.map(p => `<img src="${p}" alt="待上傳照片">`).join(''); }
@@ -1329,13 +1367,14 @@ document.addEventListener('submit', async e => {
       const fields = { '進貨日': isoOut(g('f-in')), '車牌': g('f-plate').toUpperCase(), '廠牌': g('f-brand').toUpperCase(), '車型': g('f-model'), '年份': g('f-year'), '顏色': g('f-color'),
         '里程': g('f-km'), '認證': g('f-cert'), '廠證': g('f-fc'), '鑰匙': g('f-keys'), '採購': g('f-buyer'), '採購金額': g('f-cost'), '備註': g('f-note'),
         '開價': g('f-ask'), '底價': g('f-floor'), '保底獎金': g('f-bonus'), '管理人': g('f-mgr'), '類別': $('#f-official')?.checked ? '公務車' : '一般' };
-      await act({ action: 'updateCar', id: editId, fields }, btn);
+      await act({ action: 'updateCar', id: editId, fields, docs: readDocs() }, btn); pendingLic = null;
     } else {
       const car = { inDate: isoOut(g('f-in')), plate: g('f-plate'), brand: g('f-brand'), model: g('f-model'), year: g('f-year'), color: g('f-color'), km: g('f-km'),
-        cert: g('f-cert'), fc: g('f-fc'), keys: g('f-keys'), buyer: g('f-buyer'), cost: g('f-cost'), note: g('f-note'), official: !!$('#f-official')?.checked };
-      await act({ action: 'addCar', car, visitId: pendingTrade || '' }, btn);
+        cert: g('f-cert'), fc: g('f-fc'), keys: g('f-keys'), buyer: g('f-buyer'), cost: g('f-cost'), note: g('f-note'), official: !!$('#f-official')?.checked, docs: readDocs() };
+      await act({ action: 'addCar', car, visitId: pendingTrade || '' }, btn); pendingLic = null;
     }
   }
+  if (f.id === 'dcf') { const r = await act({ action: 'carDocs', id: f.dataset.id, fields: readDocs() }, btn); if (r && r.ok) pendingLic = null; }
   if (f.id === 'lf') { const r = await act({ action: 'addLog', type: logType, date: isoOut(g('ld')), carId: g('lc'), link: g('ll'), text: g('ltx'), platforms: [...f.querySelectorAll('[name=lp]:checked')].map(x => x.value) }, btn); }
   if (f.id === 'skf') await act({ action: 'saveSeek', cust: g('sk1'), want: g('sk2'), year: g('sk3'), budget: g('sk4'), note: g('sk5') }, btn);
   if (f.id === 'srf') await act({ action: 'saveSource', car: g('sr1'), from: g('sr2'), price: g('sr3'), note: g('sr4') }, btn);
