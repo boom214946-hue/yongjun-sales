@@ -282,7 +282,7 @@ const rowOf = name => SALES().includes(name) ? name : '公司車';
 function normalize() {
   CARS = D.cars.map(c => ({ id: c['編號'], inDate: c['進貨日'], plate: c['車牌'], brand: c['廠牌'], model: c['車型'], year: c['年份'],
     color: c['顏色'], km: c['里程'], cert: c['認證'], fc: c['廠證'], keys: c['鑰匙'], ask: N(c['開價']), floor: N(c['底價']),
-    bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), official: c['類別'] === '公務車', note: c['備註'],
+    bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), totalCost: N(c['成本']), official: c['類別'] === '公務車', note: c['備註'],
     vin: c['車身號碼'] || '', engineNo: c['引擎號碼'] || '', cc: c['排氣量'] || '', origin: c['產地'] || '', country: c['進口國'] || '',
     lpDate: c['領牌日'] || '', ldDate: c['領照日'] || '', insDate: c['強制險到期日'] || '', hasLic: !!c.hasLic,
     bodyEquip: c['車身式樣及附加配備'] || '', seats: c['載運人數'] || '', inspDate: c['指定檢驗日'] || '', fuel: c['燃料種類'] || '' }));
@@ -359,7 +359,7 @@ function renderStock() {
         <td>${['在庫', '已收訂'].includes(st) ? (prepPct(c.id) === 100 ? `<button class="chip" data-pm="${c.id}" style="color:var(--ok)">✅ 100%</button>` : `<button class="chip" data-pm="${c.id}">${prepPct(c.id)}%</button>`) : '<span class="muted">—</span>'}</td>
         <td>${out}${st === '公務車' ? '<span class="pill done">公務車</span>' : st === '在庫' ? '<span class="pill done">在庫</span>' : st === '已收訂' ? `<span class="pill active">${esc(o.seller)} 已收訂</span>` : `<span class="pill ready">${esc(o.seller)} 已交車</span>`}</td>
         <td><div class="row" style="gap:6px;flex-wrap:nowrap">
-          ${isBoss() ? `<button class="btn" data-edit="${c.id}">${priced || c.official ? '修改' : '定價'}</button>` : ''}
+          ${isBoss() ? `<button class="btn" data-edit="${c.id}">${priced || c.official ? '修改' : '定價'}</button>` : D.me.isOffice ? `<button class="btn" data-edit="${c.id}">修改</button>` : ''}
           ${st === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button><button class="btn" data-docs="${c.id}" title="車身號碼、引擎號碼、行照等，簽合約會自動帶入">${docsDone(c) ? '車籍' : '車籍 ⚠'}</button>${CONTRACT_URL ? `<button class="btn acc" data-contract="${c.id}" ${priced ? '' : 'disabled'}>簽合約</button><button class="btn" data-order="${c.id}" ${priced ? '' : 'disabled'} title="同業交易或不用合約時使用">收訂</button>` : `<button class="btn acc" data-order="${c.id}" ${priced ? '' : 'disabled'}>收訂</button>`}`
             : st === '已收訂' ? `<button class="btn pri" data-prepgo="${o.id}">整備／交車</button>` : ''}
         </div></td></tr>`;
@@ -373,7 +373,7 @@ function carForm(c, opt = {}) {
   c = c || { inDate: D.today, plate: '', brand: '', model: '', year: '', color: '', km: '', cert: 'TSI', fc: 'V', keys: '2', ask: null, floor: null, bonus: null, buyer: '公司', manager: '', cost: null, official: false, note: '' };
   if (opt.trade) Object.assign(c, opt.trade);
   const sel = (id, opts, v) => `<select id="${id}">${opts.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
-  return `<h3>${edit ? (c.floor == null && !c.official ? '定價與指派' : '修改車輛') + '・' + esc(label(c)) : '新增採購車輛'}</h3>
+  return `<h3>${edit ? (boss && c.floor == null && !c.official ? '定價與指派' : '修改車輛') + '・' + esc(label(c)) : '新增採購車輛'}</h3>
   <form id="cf" class="form2" data-id="${edit ? c.id : ''}">
     <label>入庫日<input type="date" id="f-in" value="${isoIn(c.inDate)}" required></label>
     <label>車牌<input type="text" id="f-plate" value="${esc(c.plate)}" placeholder="ABC-1234" required></label>
@@ -387,6 +387,7 @@ function carForm(c, opt = {}) {
     <label>鑰匙${sel('f-keys', ['2', '1', '–'], c.keys)}</label>
     <label>採購${canAll() ? sel('f-buyer', ['公司', '寄賣', ...SALES()], c.buyer) : `<input type="text" value="${esc(D.me.en)}" disabled>`}</label>
     <label>採購金額${boss || !edit ? `<input type="number" id="f-cost" value="${c.cost ?? ''}" placeholder="例如 520000">` : ''}</label>
+    ${canAll() ? `<label>成本（總成本，主管和行政看得到）<input type="number" id="f-tcost" value="${c.totalCost ?? ''}" placeholder="車價＋整備＋其他"></label>` : ''}
     ${boss && edit ? `
     <label>開價<input type="number" id="f-ask" value="${c.ask ?? ''}"></label>
     <label>底價<input type="number" id="f-floor" value="${c.floor ?? ''}"></label>
@@ -395,6 +396,7 @@ function carForm(c, opt = {}) {
     ${boss ? `<label class="full" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-weight:400"><input type="checkbox" id="f-official" ${c.official ? 'checked' : ''}> 公務車（不出售，只列入每日點車）</label>` : ''}
     <label class="full">備註<input type="text" id="f-note" value="${esc(c.note)}"></label>
     ${docsFields(c)}
+    ${edit && !boss ? `<p class="full small muted" style="margin:0">開價、底價、保底獎金、管理人和採購金額由主管修改。</p>` : ''}
     ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並推播給全體員工。</p>` : ''}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存' : '送出入庫'}</button></div>
   </form>`;
@@ -1185,20 +1187,26 @@ function renderBonus() {
   const waiting = ORDERS.filter(o => o.status === '已收訂').sort((a, b) => a.date.localeCompare(b.date));
   const sum = {}; SALES().forEach(s => sum[s] = { sale: 0, buy: 0, pending: 0 });
   list.forEach(o => { const b = bonusOf(o); if (!b) return; if (sum[o.seller]) { sum[o.seller].sale += b.fSale || 0; if (b.pending) sum[o.seller].pending++; } if (b.buyer && sum[b.buyer]) sum[b.buyer].buy += b.fBuy || 0; });
+  // 利潤：毛利＝成交價−成本；淨利＝毛利−銷售獎金−採購獎金（成本沒填的不列入合計）
+  const prof = o => { const c = carById(o.carId), b = bonusOf(o); if (!c || c.totalCost == null || o.price == null) return null; const g = o.price - c.totalCost; return { g, n: g - ((b && b.fSale) || 0) - ((b && b.fBuy) || 0) }; };
+  const pr = list.map(prof), pOk = pr.filter(Boolean), gSum = pOk.reduce((a, x) => a + x.g, 0), nSum = pOk.reduce((a, x) => a + x.n, 0), noCost = list.length - pOk.length;
   const inp = (o, k, calc) => `<input type="number" data-bf="${o.id}|${k}" value="${(k === 'sale' ? o.fSale : o.fBuy) !== '' ? (k === 'sale' ? o.fSale : o.fBuy) : (calc ?? '')}" placeholder="${calc == null ? '待斟酌' : ''}" style="width:92px;${calc == null && o.fSale === '' && k === 'sale' ? 'border-color:var(--warn)' : ''}" aria-label="核定">`;
   return `
   <div class="notice secret">此頁只有主管看得到。獎金依交車月發放；低於底價的單標紅，等你斟酌金額。</div>
   <section class="row" style="justify-content:space-between"><h2 style="font-size:18px">獎金結算</h2>
     <div class="row"><label class="label" for="bmon">交車月份</label><select id="bmon">${monthsList(ORDERS.map(o => o.delivered)).map(m => `<option value="${m}" ${m === bonusMonth ? 'selected' : ''}>${m}</option>`).join('')}</select></div></section>
   <section class="kpis">${SALES().map(s => `<div class="kpi"><div class="label">${s}</div><div class="n">${money(sum[s].sale + sum[s].buy)}</div><div class="small muted">銷售 ${money(sum[s].sale)}・採購 ${money(sum[s].buy)}${sum[s].pending ? `・<b style="color:var(--warn)">待斟酌 ${sum[s].pending}</b>` : ''}</div></div>`).join('')}
-    <div class="kpi"><div class="label">合計</div><div class="n">${money(Object.values(sum).reduce((a, b) => a + b.sale + b.buy, 0))}</div><div class="small muted">交車 ${list.length} 台</div></div></section>
-  <section class="panel" style="padding:0"><div class="tbl-wrap"><table style="min-width:1080px;font-size:13.5px">
-    <thead><tr><th>交車日</th><th>車輛</th><th>客人</th><th style="text-align:right">成交價</th><th style="text-align:right">底價</th><th style="text-align:right">差額</th><th>銷售</th><th style="text-align:right">試算</th><th>核定</th><th>採購人</th><th style="text-align:right">試算</th><th>核定</th></tr></thead>
-    <tbody>${list.map(o => { const b = bonusOf(o); if (!b) return `<tr><td colspan="12" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const c = b.c, comp = !SALES().includes(o.seller);
+    <div class="kpi"><div class="label">合計</div><div class="n">${money(Object.values(sum).reduce((a, b) => a + b.sale + b.buy, 0))}</div><div class="small muted">交車 ${list.length} 台</div></div>
+    <div class="kpi"><div class="label">毛利合計</div><div class="n">${money(gSum)}</div><div class="small muted">成交價−成本${noCost ? `・<b style="color:var(--warn)">${noCost} 台沒填成本</b>` : ''}</div></div>
+    <div class="kpi"><div class="label">扣獎金後利潤</div><div class="n">${money(nSum)}</div><div class="small muted">毛利−銷售及採購獎金</div></div></section>
+  <section class="panel" style="padding:0"><div class="tbl-wrap"><table style="min-width:1300px;font-size:13.5px">
+    <thead><tr><th>交車日</th><th>車輛</th><th>客人</th><th style="text-align:right">成交價</th><th style="text-align:right">底價</th><th style="text-align:right">差額</th><th>銷售</th><th style="text-align:right">試算</th><th>核定</th><th>採購人</th><th style="text-align:right">試算</th><th>核定</th><th style="text-align:right">成本</th><th style="text-align:right">毛利</th><th style="text-align:right">扣獎金後</th></tr></thead>
+    <tbody>${list.map(o => { const b = bonusOf(o); if (!b) return `<tr><td colspan="15" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const c = b.c, comp = !SALES().includes(o.seller);
       return `<tr style="${b.below ? 'background:var(--warn-soft)' : ''}"><td class="mono">${md(o.delivered)}<div class="small muted">收訂 ${md(o.date)}</div></td><td><b>${esc(label(c))}</b><div class="mono small muted">${esc(c.plate)}</div></td><td>${esc(o.cust)}</td>
       <td class="mono" style="text-align:right"><input type="number" data-bp="${o.id}" value="${o.price ?? ''}" aria-label="成交價" title="主管可修改成交價" style="width:104px;text-align:right"></td><td class="mono" style="text-align:right">${money(c.floor)}</td><td class="mono" style="text-align:right;color:${b.below ? 'var(--warn)' : 'var(--ok)'}">${b.diff >= 0 ? '+' : ''}${money(b.diff)}</td>
       <td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${comp ? '—' : inp(o, 'sale', b.sale)}</td>
-      <td>${esc(c.buyer)}${b.buyer ? `<div class="small muted">採購 ${money(c.cost) || '未填'}</div>` : ''}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">低於底價・無</span>' : money(b.buy)}</td><td>${b.buyer && !b.below ? inp(o, 'buy', b.buy) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="12" class="muted">這個月沒有交車</td></tr>'}</tbody></table></div></section>
+      <td>${esc(c.buyer)}${b.buyer ? `<div class="small muted">採購 ${money(c.cost) || '未填'}</div>` : ''}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">低於底價・無</span>' : money(b.buy)}</td><td>${b.buyer && !b.below ? inp(o, 'buy', b.buy) : '—'}</td>
+      ${(() => { const p = prof(o); return `<td class="mono" style="text-align:right">${c.totalCost == null ? '<span class="need">未填</span>' : money(c.totalCost)}</td><td class="mono" style="text-align:right">${p ? money(p.g) : '—'}</td><td class="mono" style="text-align:right;font-weight:700;color:${p && p.n < 0 ? 'var(--warn)' : 'inherit'}">${p ? money(p.n) : '—'}</td>`; })()}</tr>`; }).join('') || '<tr><td colspan="15" class="muted">這個月沒有交車</td></tr>'}</tbody></table></div></section>
   <section class="panel sec"><h3 style="font-size:16px">已收訂、還沒交車（交車後列入）</h3>
     <div class="tbl-wrap"><table style="min-width:720px;font-size:13.5px"><thead><tr><th>收訂日</th><th>車輛</th><th>銷售</th><th style="text-align:right">成交價／底價</th><th style="text-align:right">銷售試算</th><th>採購人</th><th style="text-align:right">採購試算</th><th>預計交車</th></tr></thead>
     <tbody>${waiting.map(o => { const b = bonusOf(o); const c = carById(o.carId); if (!b) return `<tr><td colspan="8" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const comp = !SALES().includes(o.seller);
@@ -1368,12 +1376,12 @@ document.addEventListener('submit', async e => {
     const editId = f.dataset.id;
     if (editId) {
       const fields = { '進貨日': isoOut(g('f-in')), '車牌': g('f-plate').toUpperCase(), '廠牌': g('f-brand').toUpperCase(), '車型': g('f-model'), '年份': g('f-year'), '顏色': g('f-color'),
-        '里程': g('f-km'), '認證': g('f-cert'), '廠證': g('f-fc'), '鑰匙': g('f-keys'), '採購': g('f-buyer'), '採購金額': g('f-cost'), '備註': g('f-note'),
+        '里程': g('f-km'), '認證': g('f-cert'), '廠證': g('f-fc'), '鑰匙': g('f-keys'), '採購': g('f-buyer'), '採購金額': g('f-cost'), ...($('#f-tcost') ? { '成本': g('f-tcost') } : {}), '備註': g('f-note'),
         '開價': g('f-ask'), '底價': g('f-floor'), '保底獎金': g('f-bonus'), '管理人': g('f-mgr'), '類別': $('#f-official')?.checked ? '公務車' : '一般' };
       await act({ action: 'updateCar', id: editId, fields, docs: readDocs() }, btn); pendingLic = null;
     } else {
       const car = { inDate: isoOut(g('f-in')), plate: g('f-plate'), brand: g('f-brand'), model: g('f-model'), year: g('f-year'), color: g('f-color'), km: g('f-km'),
-        cert: g('f-cert'), fc: g('f-fc'), keys: g('f-keys'), buyer: g('f-buyer'), cost: g('f-cost'), note: g('f-note'), official: !!$('#f-official')?.checked, docs: readDocs() };
+        cert: g('f-cert'), fc: g('f-fc'), keys: g('f-keys'), buyer: g('f-buyer'), cost: g('f-cost'), totalCost: g('f-tcost'), note: g('f-note'), official: !!$('#f-official')?.checked, docs: readDocs() };
       await act({ action: 'addCar', car, visitId: pendingTrade || '' }, btn); pendingLic = null;
     }
   }
