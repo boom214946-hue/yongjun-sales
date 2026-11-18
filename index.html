@@ -224,7 +224,7 @@ if (location.hostname.endsWith('github.io') && !location.pathname.startsWith('/y
 // ===== 設定 =====
 const LIFF_ID = '2012275132-8PYWlQ0K';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzsewthHYW4Dpz-D-pr4xrmqwK5wKo22B1lEUzReJsa9mzLlutbI5k4sYspnoygb6OIxg/exec';
-const CONTRACT_URL = '';   // 合約系統的 LIFF 網址（例如 https://liff.line.me/2012275132-xxxxxxxx），填了車源表才會出現「簽合約」按鈕
+const CONTRACT_URL = 'https://liff.line.me/2012275132-Rf1eHEcV';   // 合約系統的 LIFF 網址（例如 https://liff.line.me/2012275132-xxxxxxxx），填了車源表才會出現「簽合約」按鈕
 const START = '2026/11/01';   // 系統上線日：之前的年度數字放在試算表「年度基準」
 const BONUS = { saleRate: .3, buyRate: .2, buyBaseLow: 1000, buyBaseHigh: 3000, buyThreshold: 500000 };
 
@@ -284,7 +284,8 @@ function normalize() {
     color: c['顏色'], km: c['里程'], cert: c['認證'], fc: c['廠證'], keys: c['鑰匙'], ask: N(c['開價']), floor: N(c['底價']),
     bonus: N(c['保底獎金']), buyer: c['採購'], manager: c['管理人'], cost: N(c['採購金額']), official: c['類別'] === '公務車', note: c['備註'],
     vin: c['車身號碼'] || '', engineNo: c['引擎號碼'] || '', cc: c['排氣量'] || '', origin: c['產地'] || '', country: c['進口國'] || '',
-    lpDate: c['領牌日'] || '', ldDate: c['領照日'] || '', insDate: c['強制險到期日'] || '', hasLic: !!c.hasLic }));
+    lpDate: c['領牌日'] || '', ldDate: c['領照日'] || '', insDate: c['強制險到期日'] || '', hasLic: !!c.hasLic,
+    bodyEquip: c['車身式樣及附加配備'] || '', seats: c['載運人數'] || '', inspDate: c['指定檢驗日'] || '', fuel: c['燃料種類'] || '' }));
   ORDERS = D.orders.map(o => ({ id: o['編號'], carId: o['車輛編號'], plate: o['車牌'], label: o['車款'], seller: o['收訂業務'], date: o['收訂日'],
     cust: o['客戶'], price: N(o['成交價']), eta: o['預計交車日'], status: o['狀態'], delivered: o['交車日'],
     fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'], stage: +o['整備階段'] || 0, token: o['客戶頁代碼'], code: o['綁定碼'], bound: !!o.bound }));
@@ -1208,6 +1209,7 @@ function renderBonus() {
 
 // ===== 第四階段：車籍資料（合約系統會自動帶入）=====
 const docsDone = c => !!(c.vin && c.hasLic);
+
 function docsFields(c) {
   c = c || {};
   return `<div class="full label" style="margin-top:4px">車籍資料（看行照填，簽合約會自動帶入）</div>
@@ -1215,18 +1217,19 @@ function docsFields(c) {
     <label>引擎號碼<input type="text" id="dc-eng" value="${esc(c.engineNo || '')}" style="text-transform:uppercase"></label>
     <label>排氣量（cc）<input type="number" id="dc-cc" value="${esc(c.cc || '')}" placeholder="1595"></label>
     <label>產地<select id="dc-origin"><option value=""></option>${['國產', '進口'].map(o => `<option ${c.origin === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
-    <label>進口國<input type="text" id="dc-country" value="${esc(c.country || '')}" placeholder="德國"></label>
-    <label>領牌日<input type="date" id="dc-lp" value="${c.lpDate ? isoIn(c.lpDate) : ''}"></label>
-    <label>領照日<input type="date" id="dc-ld" value="${c.ldDate ? isoIn(c.ldDate) : ''}"></label>
-    <label>原強制險到期日<input type="date" id="dc-ins" value="${c.insDate ? isoIn(c.insDate) : ''}"></label>
+    <label>燃料種類<input type="text" id="dc-fuel" value="${esc(c.fuel || '')}" list="dc-fuellist" placeholder="汽油"><datalist id="dc-fuellist">${['汽油', '柴油', '油電', '電動'].map(x => `<option value="${x}">`).join('')}</datalist></label>
+    <label>載運人數（座）<input type="number" id="dc-seats" value="${esc(c.seats || '')}" placeholder="5"></label>
+    <label>指定檢驗日<input type="date" id="dc-insp" value="${c.inspDate ? isoIn(c.inspDate) : ''}"></label>
+    <label class="full">車身式樣及附加配備（照行照填）<input type="text" id="dc-body" value="${esc(c.bodyEquip || '')}" placeholder="例：轎式 LED頭燈" maxlength="40"></label>
     <label class="full drop" for="dc-lic">${c.hasLic ? '✓ 已上傳前車主行照（重新拍照會取代）' : '＋ 拍攝前車主行車執照'}<input id="dc-lic" type="file" accept="image/*"></label>
     <div class="full thumbs" id="dc-licth">${pendingLic ? `<img src="${pendingLic}" alt="行照">` : ''}</div>`;
 }
 function readDocs() {
   const g = id => ($('#' + id) ? $('#' + id).value.trim() : '');
   if (!$('#dc-vin')) return null;
-  const o = { vin: g('dc-vin'), engineNo: g('dc-eng'), cc: g('dc-cc'), origin: g('dc-origin'), country: g('dc-country'),
-    lpDate: isoOut(g('dc-lp')), ldDate: isoOut(g('dc-ld')), insDate: isoOut(g('dc-ins')) };
+  // 進口國、領牌日、領照日、原強制險到期日改在合約上填（簽約後會自動寫回車源表）
+  const o = { vin: g('dc-vin'), engineNo: g('dc-eng'), cc: g('dc-cc'), origin: g('dc-origin'),
+    bodyEquip: g('dc-body'), seats: g('dc-seats'), inspDate: isoOut(g('dc-insp')), fuel: g('dc-fuel') };
   if (pendingLic) o.lic = pendingLic;
   return o;
 }
