@@ -133,6 +133,11 @@ th{font-size:12px;color:var(--muted);font-weight:700}
 .calc{background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px}
 .modal{position:fixed;inset:0;background:rgba(10,14,22,.55);display:grid;grid-template-columns:minmax(0,1fr);place-items:center;z-index:25;padding:16px}
 .modal .box{background:var(--surface);border-radius:14px;padding:18px;width:min(460px,100%);display:flex;flex-direction:column;gap:12px;max-height:88vh;overflow:auto}
+.modal .box.wide{width:min(760px,100%)}
+button.kpi.click{cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}button.kpi.click:hover{border-color:var(--pri);box-shadow:0 0 0 1px var(--pri)}
+.kpi .more{font-size:12px;color:var(--pri);font-weight:700;margin-top:4px}
+button.cnum{border:0;background:none;padding:2px 6px;border-radius:6px;font-family:var(--f-mono);font-weight:700;color:var(--pri);text-decoration:underline;cursor:pointer}button.cnum:hover{background:var(--surface2)}
+.dlist .it{padding:9px 0;border-top:1px solid var(--line)}.dlist .day+.it{border-top:0}.dlist .day{margin-top:10px}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:700;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
 .log{display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -242,7 +247,7 @@ const ym = s => s.slice(0, 7);
 const isoIn = s => s.replace(/\//g, '-');          // yyyy/MM/dd → input[type=date]
 const isoOut = s => (s || '').replace(/-/g, '/');
 function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => t.hidden = true, 3200); }
-function openModal(html) { $('#mbox').innerHTML = html; $('#modal').hidden = false; }
+function openModal(html, wide) { $('#mbox').innerHTML = html; $('#mbox').classList.toggle('wide', !!wide); $('#modal').hidden = false; }
 function closeModal() { $('#modal').hidden = true; pendingTrade = null; }
 
 // 電腦版瀏覽器會留著舊的登入憑證（約 1 小時過期），過期就先登出再重新登入
@@ -874,6 +879,76 @@ async function prepSave(id, j, patch) {
 // ===== 業務儀表板（第三階段）=====
 let dashWho = null, dashMonth = '', logType = '拍影片上傳', seekOpen = false;
 const DD = () => D.dash;
+// 點儀表板的數字 → 條列明細
+const kc = (k, lab, n, s, cls = '') => `<button type="button" class="kpi click ${cls}" data-dk="${k}"><div class="label">${lab}</div><div class="n">${n}</div><div class="s">${s}</div><div class="more">看明細 ›</div></button>`;
+const cn = (k, p, n) => n ? `<button type="button" class="cnum" data-dk="${k}|${esc(p)}">${n}</button>` : '<span class="mono muted">0</span>';
+// 客戶追蹤＝客戶服務裡的互動紀錄（不含交車、修改這種系統紀錄）＋儀表板「客戶追蹤」類型的工作紀錄
+function dashFollows(people, month) {
+  const d = DD();
+  const a = SV().contacts.filter(k => !k.hidden && people.includes(k['業務']) && String(k['時間']).startsWith(month) && !['交車', '修改'].includes(k['類型']))
+    .map(k => ({ date: String(k['時間']).slice(0, 10), time: String(k['時間']).slice(11, 16), by: k['業務'], type: k['類型'] || '紀錄', text: k['內容'], cust: custById(k['客戶編號']),
+      line: k['LINE'] ? (k['結果'] === '失敗' ? 'LINE 失敗' : 'LINE') : '', follow: k['追蹤日'], images: k.images || [] }));
+  const b = d.logs.filter(l => l['類型'] === '客戶追蹤' && people.includes(l['業務']) && l['日期'].startsWith(month))
+    .map(l => ({ date: l['日期'], time: String(l['建立時間'] || '').slice(11, 16), by: l['業務'], type: '工作紀錄', text: l['內容'], car: l['車輛編號'] && carById(l['車輛編號']), images: [] }));
+  return a.concat(b).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
+}
+function folCount(people, month) {
+  const d = DD();
+  if (D.me.isOffice) return people.reduce((a, p) => a + ((d.follows[p] || {})[month] || 0), 0) + d.logs.filter(l => l['類型'] === '客戶追蹤' && people.includes(l['業務']) && l['日期'].startsWith(month)).length;
+  return dashFollows(people, month).length;
+}
+const wday = day => '日一二三四五六'[new Date(isoIn(day)).getDay()];
+function dayGroups(items, row) {
+  const g = {}; items.forEach(x => (g[x.date] = g[x.date] || []).push(x));
+  return Object.keys(g).sort().reverse().map(day => `<div class="day">${md(day)}（${wday(day)}）・${g[day].length} 筆</div>${g[day].map(row).join('')}`).join('');
+}
+function dashDetail(kind, person) {
+  const d = DD(), month = dashMonth || D.today.slice(0, 7), mn = `${+month.slice(5)} 月`;
+  const people = person ? [person] : dashWho === '' ? d.people : [dashWho], mine = by => people.includes(by), multi = people.length > 1;
+  const scope = multi ? '全部人員' : people[0], by = x => multi ? `<b>${esc(x)}</b>` : '';
+  const thumbs = im => im.length ? `<div class="thumbs" style="margin-top:6px">${im.map(u => `<img src="${u}" alt="照片" data-zoom loading="lazy">`).join('')}</div>` : '';
+  const logRow = l => { const c = l['車輛編號'] && carById(l['車輛編號']);
+    return `<div class="it"><div class="row small" style="gap:6px"><span class="pill ${['拍影片上傳', '發貼文', '上8891廣告'].includes(l['類型']) ? 'active' : l['類型'] === '客戶追蹤' ? 'ready' : 'done'}">${esc(l['類型'])}</span>${by(l['業務'])}${l['平台'] ? `<span class="muted">［${esc(l['平台'].split(',').join('、'))}］</span>` : ''}</div>
+      ${c ? `<div><b>${esc(label(c))}</b> <span class="small muted">${esc(c.brand)}・<span class="mono">${esc(c.plate)}</span></span></div>` : l['車牌'] ? `<div class="mono"><b>${esc(l['車牌'])}</b></div>` : ''}
+      ${l['內容'] ? `<div style="white-space:pre-wrap">${esc(l['內容'])}</div>` : ''}${l['連結'] ? `<a href="${esc(l['連結'])}" target="_blank" rel="noopener" class="small">開啟連結 ›</a>` : ''}</div>`; };
+  const logsOf = t => d.logs.filter(l => mine(l['業務']) && (!t || l['類型'] === t) && l['日期'].startsWith(month)).map(l => Object.assign({ date: l['日期'] }, l))
+    .sort((a, b) => b['日期'].localeCompare(a['日期']) || String(b['建立時間']).localeCompare(String(a['建立時間'])));
+  let title, items, body, note = '';
+  if (kind === 'follow') {
+    title = '客戶追蹤'; items = dashFollows(people, month);
+    body = dayGroups(items, x => `<div class="it"><div class="row small" style="gap:6px"><span class="pill ${x.cust ? 'ready' : 'done'}">${esc(x.type)}</span>${by(x.by)}${x.time ? `<span class="mono muted">${x.time}</span>` : ''}${x.line ? `<span class="pill ${x.line === 'LINE' ? 'ready' : 'stale'}">${x.line}</span>` : ''}${x.follow ? `<span class="pill active">下次追蹤 ${md(x.follow)}</span>` : ''}</div>
+      ${x.cust ? `<div style="margin-top:4px"><button type="button" class="btn" data-gocust="${x.cust['編號']}" style="padding:3px 10px">${esc(x.cust['客戶'])}・${esc(x.cust['車款'])} ›</button></div>` : x.car ? `<div><b>${esc(label(x.car))}</b></div>` : ''}
+      ${x.text ? `<div style="white-space:pre-wrap;margin-top:4px">${esc(x.text)}</div>` : ''}${thumbs(x.images)}</div>`);
+    note = '點客人名字可以直接打開那位客人的完整資料。';
+    if (D.me.isOffice) note = '客戶服務的互動內容只有主管和負責業務看得到。';
+  } else if (kind === 'seek' || kind === 'source') {
+    const isSeek = kind === 'seek', open = isSeek ? '尋找中' : '追蹤中';
+    title = isSeek ? '尋車客人' : '找車源';
+    items = (isSeek ? d.seeks : d.sources).filter(x => mine(x['業務'])).sort((a, b) => (a['狀態'] !== open) - (b['狀態'] !== open) || b['登記日'].localeCompare(a['登記日']));
+    body = items.map(x => `<div class="it"><div class="row small" style="gap:6px"><span class="pill ${x['狀態'] === open ? 'active' : 'done'}">${esc(x['狀態'])}</span>${by(x['業務'])}<span class="muted">${md(x['登記日'])} 登記${x['更新時間'] ? '・' + esc(String(x['更新時間']).slice(5, 16)) + ' 更新' : ''}</span></div>
+      <div>${isSeek ? `<b>${esc(x['客人'])}</b> 想找 <b>${esc(x['車款'])}</b> <span class="small muted">${esc(x['年份'])}${x['預算'] ? '・預算 ' + esc(x['預算']) : ''}</span>`
+        : `<b>${esc(x['車款'])}</b> <span class="small muted">${esc(x['來源'])}${x['開價'] ? '・開價 ' + esc(x['開價']) : ''}</span>`}</div>
+      ${x['備註'] ? `<div style="white-space:pre-wrap">${esc(x['備註'])}</div>` : ''}</div>`).join('');
+    note = `數字只算「${open}」，這裡列出全部（含已結束的）。`;
+  } else if (kind === 'deal') {
+    title = '收訂／交車';
+    const os = ORDERS.filter(o => mine(o.seller) && o.status !== '已退訂' && (o.date || '').startsWith(month)).sort((a, b) => b.date.localeCompare(a.date));
+    const ds = ORDERS.filter(o => mine(o.seller) && o.status === '已交車' && (o.delivered || '').startsWith(month)).sort((a, b) => b.delivered.localeCompare(a.delivered));
+    const row = (o, dt) => { const c = carById(o.carId); return `<div class="it"><div class="row small" style="gap:6px"><span class="mono muted">${md(dt)}</span>${by(o.seller)}${o.status === '已交車' ? '<span class="pill ready">已交車</span>' : '<span class="pill active">整備中</span>'}</div>
+      <div><b>${esc(c ? label(c) : o.label)}</b> <span class="small muted mono">${esc(o.plate)}</span>・客人 ${esc(o.cust)}</div></div>`; };
+    items = os.concat(ds);
+    body = `<h4 style="margin:6px 0 0">收訂 ${os.length} 台</h4>${os.map(o => row(o, o.date)).join('') || '<p class="small muted" style="margin:0">沒有</p>'}
+      <h4 style="margin:12px 0 0">交車 ${ds.length} 台</h4>${ds.map(o => row(o, o.delivered)).join('') || '<p class="small muted" style="margin:0">沒有</p>'}`;
+  } else if (kind === 'ad') {
+    title = '8891 上架'; items = logsOf('上8891廣告'); body = dayGroups(items, logRow);
+  } else {
+    const t = { video: '拍影片上傳', post: '發貼文', logs: '' }[kind];
+    title = kind === 'video' ? '影片' : kind === 'post' ? '貼文' : '全部工作紀錄'; items = logsOf(t); body = dayGroups(items, logRow);
+  }
+  return `<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h3>${title}</h3><div class="small muted">${esc(scope)}・${['seek', 'source'].includes(kind) ? '目前全部' : mn}・共 ${items.length} 筆</div></div><button class="btn" data-mclose>關閉</button></div>
+  ${note ? `<div class="small muted">${note}</div>` : ''}
+  <div class="log2 dlist">${body || '<p class="muted small" style="margin:0">沒有紀錄</p>'}</div>`;
+}
 function renderDash() {
   const d = DD(); if (!d) return '<div class="panel">沒有權限</div>';
   if (dashWho === null) dashWho = D.me.isBoss ? '' : D.me.en;
@@ -881,7 +956,7 @@ function renderDash() {
   const people = all ? d.people : [who], mine = by => people.includes(by);
   const logs = d.logs.filter(l => mine(l['業務'])), mlogs = logs.filter(l => l['日期'].startsWith(month)).sort((a, b) => b['日期'].localeCompare(a['日期']) || b['建立時間'].localeCompare(a['建立時間']));
   const cnt = (arr, t) => arr.filter(l => l['類型'] === t).length;
-  const fol = people.reduce((a, p) => a + ((d.follows[p] || {})[month] || 0), 0);
+  const fol = folCount(people, month);
   const deals = people.reduce((a, p) => [a[0] + ORDERS.filter(o => o.seller === p && o.status !== '已退訂' && (o.date || '').startsWith(month)).length, a[1] + ORDERS.filter(o => o.seller === p && o.status === '已交車' && (o.delivered || '').startsWith(month)).length], [0, 0]);
   const seeks = d.seeks.filter(x => mine(x['業務'])), srcs = d.sources.filter(x => mine(x['業務']));
   const ad8891 = Object.values(d.ad).filter(a => (a.date || '').startsWith(month)).length;
@@ -901,22 +976,22 @@ function renderDash() {
     <div class="row">${boss ? `<select id="dws" aria-label="人員"><option value="">全部人員</option>${d.people.map(p => `<option value="${esc(p)}" ${p === who ? 'selected' : ''}>${esc(pname(p))}</option>`).join('')}</select>` : ''}
       <select id="dwm" aria-label="月份">${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m.slice(0, 4)} 年 ${+m.slice(5)} 月</option>`).join('')}</select></div></section>
   <div class="kpis6">
-    <div class="kpi"><div class="label">客戶追蹤</div><div class="n">${fol}</div><div class="s">客戶服務互動紀錄</div></div>
-    <div class="kpi"><div class="label">尋車客人</div><div class="n">${seeks.filter(x => x['狀態'] === '尋找中').length}</div><div class="s">尋找中</div></div>
-    <div class="kpi"><div class="label">找車源</div><div class="n">${srcs.filter(x => x['狀態'] === '追蹤中').length}</div><div class="s">追蹤中</div></div>
-    <div class="kpi"><div class="label">影片</div><div class="n">${cnt(mlogs, '拍影片上傳')}</div><div class="s">本月上傳</div></div>
-    <div class="kpi"><div class="label">貼文</div><div class="n">${cnt(mlogs, '發貼文')}</div><div class="s">本月發文</div></div>
-    ${showAd ? `<div class="kpi"><div class="label">8891 上架</div><div class="n">${ad8891}</div><div class="s">本月刊登</div></div>` : ''}
-    <div class="kpi ok"><div class="label">收訂／交車</div><div class="n">${deals[0]}／${deals[1]}</div><div class="s">本月</div></div>
+    ${kc('follow', '客戶追蹤', fol, '客戶服務＋工作紀錄')}
+    ${kc('seek', '尋車客人', seeks.filter(x => x['狀態'] === '尋找中').length, '尋找中')}
+    ${kc('source', '找車源', srcs.filter(x => x['狀態'] === '追蹤中').length, '追蹤中')}
+    ${kc('video', '影片', cnt(mlogs, '拍影片上傳'), '本月上傳')}
+    ${kc('post', '貼文', cnt(mlogs, '發貼文'), '本月發文')}
+    ${showAd ? kc('ad', '8891 上架', ad8891, '本月刊登') : ''}
+    ${kc('deal', '收訂／交車', deals[0] + '／' + deals[1], '本月', 'ok')}
   </div>
   ${(() => { const E = mlogs.filter(l => l['類型'] === '拍影片上傳' || l['類型'] === '發貼文'); if (!E.length) return '';
     const rows = d.platforms.map(p => ({ p, v: E.filter(l => l['類型'] === '拍影片上傳' && (l['平台'] || '').split(',').includes(p)).length, t: E.filter(l => l['類型'] === '發貼文' && (l['平台'] || '').split(',').includes(p)).length })).filter(r => r.v + r.t);
     const max = Math.max(1, ...rows.map(r => r.v + r.t));
     return `<section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">${+month.slice(5)} 月發在哪些平台</h3><span class="small muted">一支影片發多個平台，各平台都會算一次</span></div>
       <div>${rows.map(r => `<div class="row" style="gap:10px;padding:4px 0;flex-wrap:nowrap"><b class="small" style="width:70px;flex:none">${r.p}</b><div style="flex:1;min-width:0"><div class="pbar" style="height:10px"><i style="width:${(r.v + r.t) / max * 100}%"></i></div></div><span class="small mono" style="width:110px;flex:none;text-align:right">影片 ${r.v}・貼文 ${r.t}</span></div>`).join('') || '<p class="small muted" style="margin:0">還沒有平台紀錄</p>'}</div></section>`; })()}
-  ${boss && all ? `<section class="panel"><h3 style="font-size:16px;margin-bottom:6px">${+month.slice(5)} 月活動力（業務＋行政）</h3><div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>人員</th><th>客戶追蹤</th><th>尋車客人</th><th>找車源</th><th>影片</th><th>貼文</th><th>工作紀錄</th><th>紀錄天數</th></tr></thead><tbody>
-    ${d.people.map(p => { const L = d.logs.filter(l => l['業務'] === p && l['日期'].startsWith(month)); return `<tr><td><b>${esc(pname(p))}</b></td><td class="mono">${(d.follows[p] || {})[month] || 0}</td><td class="mono">${d.seeks.filter(x => x['業務'] === p && x['狀態'] === '尋找中').length}</td><td class="mono">${d.sources.filter(x => x['業務'] === p && x['狀態'] === '追蹤中').length}</td>
-      <td class="mono">${cnt(L, '拍影片上傳')}</td><td class="mono">${cnt(L, '發貼文')}</td><td class="mono">${L.length}</td><td class="mono">${new Set(L.map(l => l['日期'])).size}</td></tr>`; }).join('')}</tbody></table></div></section>` : ''}
+  ${boss && all ? `<section class="panel"><h3 style="font-size:16px;margin-bottom:6px">${+month.slice(5)} 月活動力（業務＋行政）<span class="small muted" style="font-weight:400">・點數字看明細</span></h3><div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>人員</th><th>客戶追蹤</th><th>尋車客人</th><th>找車源</th><th>影片</th><th>貼文</th><th>工作紀錄</th><th>紀錄天數</th></tr></thead><tbody>
+    ${d.people.map(p => { const L = d.logs.filter(l => l['業務'] === p && l['日期'].startsWith(month)); return `<tr><td><b>${esc(pname(p))}</b></td><td>${cn('follow', p, folCount([p], month))}</td><td>${cn('seek', p, d.seeks.filter(x => x['業務'] === p && x['狀態'] === '尋找中').length)}</td><td>${cn('source', p, d.sources.filter(x => x['業務'] === p && x['狀態'] === '追蹤中').length)}</td>
+      <td>${cn('video', p, cnt(L, '拍影片上傳'))}</td><td>${cn('post', p, cnt(L, '發貼文'))}</td><td>${cn('logs', p, L.length)}</td><td class="mono">${new Set(L.map(l => l['日期'])).size}</td></tr>`; }).join('')}</tbody></table></div></section>` : ''}
   ${d.canLog ? `<form class="panel sec" id="lf"><h3 style="font-size:16px">新增工作紀錄</h3>
     <div class="row" style="gap:6px">${types.map(t => `<label class="chip" style="cursor:pointer"><input type="radio" name="lt" value="${t}" ${t === logType ? 'checked' : ''} style="margin:0 4px 0 0">${t}</label>`).join('')}</div>
     <div class="row"><input type="date" id="ld" value="${isoIn(D.today)}" aria-label="日期">
@@ -1275,6 +1350,8 @@ document.addEventListener('click', async e => {
   if (ds.reload !== undefined) { $('#view').innerHTML = '<div class="loading">讀取資料中…</div>'; await load(); return; }
   if (!D) return;
   if (ds.mclose !== undefined) { closeModal(); return; }
+  if (ds.dk) { const [k, p] = ds.dk.split('|'); openModal(dashDetail(k, p), true); return; }
+  if (ds.gocust) { closeModal(); page = 'service'; svTab = 'list'; svSeller = ''; svQ = ''; selCust = ds.gocust; notePhotos = []; render(); window.scrollTo(0, 0); return; }
   if (ds.docs) { pendingLic = null; openModal(docsModal(carById(ds.docs))); return; }
   if (ds.contract) { location.href = CONTRACT_URL + (CONTRACT_URL.includes('?') ? '&' : '?') + 'car=' + encodeURIComponent(ds.contract); return; }
   if (ds.page) { page = ds.page; render(); window.scrollTo(0, 0); return; }
