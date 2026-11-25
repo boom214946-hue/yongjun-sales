@@ -231,7 +231,7 @@ const LIFF_ID = '2012275132-8PYWlQ0K';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzsewthHYW4Dpz-D-pr4xrmqwK5wKo22B1lEUzReJsa9mzLlutbI5k4sYspnoygb6OIxg/exec';
 const CONTRACT_URL = 'https://liff.line.me/2012275132-Rf1eHEcV';   // 合約系統的 LIFF 網址（例如 https://liff.line.me/2012275132-xxxxxxxx），填了車源表才會出現「簽合約」按鈕
 const START = '2026/11/01';   // 系統上線日：之前的年度數字放在試算表「年度基準」
-const BONUS = { saleRate: .3, buyRate: .2, buyBaseLow: 1000, buyBaseHigh: 3000, buyThreshold: 500000 };
+const BONUS = { noLineRate: .7, saleRate: .3, buyRate: .2, buyBaseLow: 1000, buyBaseHigh: 3000, buyThreshold: 500000 };
 
 // ===== 基本工具 =====
 const $ = s => document.querySelector(s);
@@ -251,7 +251,7 @@ function openModal(html, wide) { $('#mbox').innerHTML = html; $('#mbox').classLi
 function closeModal() { $('#modal').hidden = true; pendingTrade = null; }
 
 // 電腦版瀏覽器會留著舊的登入憑證（約 1 小時過期），過期就先登出再重新登入
-function relogin() { try { liff.logout(); } catch (e) {} liff.login({ redirectUri: location.href }); }
+function relogin() { try { saveLogDraft(); } catch (e) {} try { liff.logout(); } catch (e) {} liff.login({ redirectUri: location.href }); }
 function tokenOk() { try { const t = liff.getDecodedIDToken(); return !!(t && t.exp * 1000 > Date.now() + 60000); } catch (e) { return false; } }
 async function api(payload) {
   if (!tokenOk()) { relogin(); throw new Error('relogin'); }
@@ -293,7 +293,7 @@ function normalize() {
     bodyEquip: c['車身式樣及附加配備'] || '', seats: c['載運人數'] || '', inspDate: c['指定檢驗日'] || '', fuel: c['燃料種類'] || '' }));
   ORDERS = D.orders.map(o => ({ id: o['編號'], carId: o['車輛編號'], plate: o['車牌'], label: o['車款'], seller: o['收訂業務'], date: o['收訂日'],
     cust: o['客戶'], price: N(o['成交價']), eta: o['預計交車日'], status: o['狀態'], delivered: o['交車日'],
-    fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'], stage: +o['整備階段'] || 0, token: o['客戶頁代碼'], code: o['綁定碼'], bound: !!o.bound }));
+    fSale: o['銷售獎金核定'], fBuy: o['採購獎金核定'], dlvBound: o['交車時已綁定'] || '', stage: +o['整備階段'] || 0, token: o['客戶頁代碼'], code: o['綁定碼'], bound: !!o.bound }));
   PROGRESS = (D.progress || []).map(p => ({ orderId: p['訂單編號'], stage: +p['階段'], note: p['說明'], photos: p.photoUrls || [], by: p['回報人'], time: p['時間'], push: p['推播'] }));
   VISITS = D.visits.map(v => ({ id: v['編號'], date: v['日期'], cust: v['客戶'], type: v['來源'], sales: v['接待業務'], purposes: (v['來意'] || '').split('＋').filter(Boolean),
     carIds: (v['看車編號'] || '').split(',').filter(Boolean), trade: v['估車車款'] ? { car: v['估車車款'], year: v['估車年份'], km: v['估車里程'], ask: N(v['期望價']) } : null,
@@ -320,7 +320,9 @@ function lastCheck(c) { for (const d of Object.keys(CHECKS).sort().reverse()) { 
 async function load() {
   const r = await api({ action: 'all' });
   if (!r.ok) { $('#view').innerHTML = `<div class="panel">${esc(r.message)}</div>`; $('#who').textContent = ''; return; }
+  const first = !D;
   D = r; normalize();
+  if (first && D.dash && D.dash.canLog && hasLogDraft()) { page = 'dash'; setTimeout(() => { toast('上次的工作紀錄還沒送出，已幫你填回'); const f = $('#lf'); if (f) f.scrollIntoView({ block: 'center' }); }, 300); }
   const nm = D.me.isBoss && D.me.en !== D.me.name ? D.me.en : D.me.name + (D.me.en !== D.me.name ? '（' + D.me.en + '）' : NICK[D.me.name] ? '（' + NICK[D.me.name] + '）' : '');
   $('#who').textContent = `${nm}・${D.me.isBoss ? '主管' : D.me.isOffice ? '行政' : '業務'}・${D.today}`;
   $('#nav').hidden = false; $('#nav-bonus').hidden = !isBoss(); $('#nav-dash').hidden = !D.dash;
@@ -339,7 +341,8 @@ function renderStock() {
   <div class="notice secret">［此為公司機密，僅限員工查看，外流需自負法律責任］</div>
   <div class="notice rule"><span>贈送客戶之保養、配件等項目，應事先回報公司核准。</span>
     <span>採購業務：50萬元以下－保底$1,000＋底價之上採購獎金20%；50萬元以上－保底$3,000＋底價之上採購獎金20%</span>
-    <span>銷售業務：保底獎金＋底價之上30%　※成交金額低於底價者，保底獎金將視情況調整</span></div>
+    <span>銷售業務：保底獎金＋底價之上30%　※成交金額低於底價者，保底獎金將視情況調整</span>
+    <span>※交車時客人未加入收訂業務的官方 LINE（未綁定），銷售獎金打 7 折</span></div>
   <section class="row" style="justify-content:space-between">
     <div class="filters">${[['庫存中', '庫存中'], ['在庫', '可收訂'], ['已收訂', '已收訂'], ['已交車', '已交車'], ['公務車', '公務車'], ['全部', '全部']].map(([f, l]) =>
       `<button class="chip" data-sf="${f}" aria-pressed="${stockFilter === f}">${l}${f !== '全部' ? ' ' + counts[f] : ''}</button>`).join('')}</div>
@@ -402,7 +405,7 @@ function carForm(c, opt = {}) {
     <label class="full">備註<input type="text" id="f-note" value="${esc(c.note)}"></label>
     ${docsFields(c)}
     ${edit && !boss ? `<p class="full small muted" style="margin:0">開價、底價、保底獎金、管理人和採購金額由主管修改。</p>` : ''}
-    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並推播給全體員工。</p>` : ''}
+    ${!edit ? `<p class="full small muted" style="margin:0">採購金額只有主管看得到。開價、底價、保底獎金和管理人由主管填寫。送出後分點表收車 +1，並通知主管填開價、底價。</p>` : ''}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">${edit ? '儲存' : '送出入庫'}</button></div>
   </form>`;
 }
@@ -425,7 +428,7 @@ function orderForm(c) {
     <label>成交價<input type="number" id="o-price" value="${c.ask}" required></label>
     <label>預計交車日<input type="date" id="o-eta" value="${isoIn(addD(D.today, 10))}"></label>
     <label>&nbsp;</label>
-    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並推播給全體員工。</p>'}
+    ${isBoss() ? '<div class="full calc" id="o-calc"></div>' : '<p class="full small muted" style="margin:0">成交價送出後，獎金由主管核算。送出後分點表訂車 +1，並推播給全體員工（美容部除外）。</p>'}
     <div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">確認收訂</button></div>
   </form>`;
 }
@@ -878,6 +881,25 @@ async function prepSave(id, j, patch) {
 
 // ===== 業務儀表板（第三階段）=====
 let dashWho = null, dashMonth = '', logType = '拍影片上傳', seekOpen = false;
+// 草稿：打字就存在手機裡，閃退、切到別的 App、重新登入回來都會自動填回，送出成功才清掉（保留 3 天）
+const CAR_TAGS = ['國際店的車', '我的粉絲頁', '其他'];   // 不是文中店車源表的車
+let ldraft = null;
+const dkey = id => 'yj-draft-' + id + '-' + (D ? D.me.en : '');
+function dget(id) { try { const o = JSON.parse(localStorage.getItem(dkey(id)) || 'null'); return o && Date.now() - o.at < 3 * 864e5 ? o : null; } catch (e) { return null; } }
+function dset(id, v) { try { if (v) localStorage.setItem(dkey(id), JSON.stringify(Object.assign({}, v, { at: Date.now() }))); else localStorage.removeItem(dkey(id)); } catch (e) {} }
+function logDraft() { if (!ldraft) { ldraft = dget('lf') || {}; if (ldraft.type) logType = ldraft.type; } return ldraft; }
+const hasLogDraft = () => { const x = logDraft(); return !!(x.text || x.link || x.carNote); };
+function saveLogDraft() {
+  const f = $('#lf'); if (!f || !D) return;
+  const x = logDraft(), v = id => $('#' + id) ? $('#' + id).value : undefined;
+  x.type = logType;
+  [['date', 'ld'], ['car', 'lc'], ['carNote', 'lcn'], ['link', 'll'], ['text', 'ltx']].forEach(([k, id]) => { const val = v(id); if (val !== undefined) x[k] = val; });
+  if (f.querySelector('[name=lp]')) x.platforms = [...f.querySelectorAll('[name=lp]:checked')].map(i => i.value);
+  dset('lf', hasLogDraft() ? x : null);
+}
+function clearLogDraft() { ldraft = {}; dset('lf', null); }
+function saveFormDraft(f) { const o = {}; f.querySelectorAll('input[id],textarea[id]').forEach(i => { if (i.value) o[i.id] = i.value; }); dset(f.id, Object.keys(o).length ? o : null); }
+function fillFormDraft(id) { const o = dget(id); if (!o) return; Object.keys(o).forEach(k => { const el = k !== 'at' && $('#' + k); if (el) el.value = o[k]; }); toast('已填回上次沒送出的內容'); }
 const DD = () => D.dash;
 // 點儀表板的數字 → 條列明細
 const kc = (k, lab, n, s, cls = '') => `<button type="button" class="kpi click ${cls}" data-dk="${k}"><div class="label">${lab}</div><div class="n">${n}</div><div class="s">${s}</div><div class="more">看明細 ›</div></button>`;
@@ -962,11 +984,16 @@ function renderDash() {
   const ad8891 = Object.values(d.ad).filter(a => (a.date || '').startsWith(month)).length;
   const showAd = (self && d.isAdBy) || (boss && all);
   const months = [...new Set([D.today.slice(0, 7), ...d.logs.map(l => l['日期'].slice(0, 7))])].sort().reverse();
+  // 90 天以上的在庫車：每週一重新算，這週（到週日）庫存滿 90 天的，每位業務都要曝光；看個人時才顯示提醒（看全部時改看「業務每週達標」表）
+  const wkS = monOf(D.today), wkE = addD(wkS, 6);
   const cars = prepCars().map(c => { const e = logs.filter(l => l['車輛編號'] === c.id && (l['類型'] === '拍影片上傳' || l['類型'] === '發貼文')).sort((a, b) => b['日期'].localeCompare(a['日期']));
-    return { c, age: stockDays(c), v: cnt(e, '拍影片上傳'), p: cnt(e, '發貼文'), last: e[0], gap: e[0] ? diffD(e[0]['日期'], D.today) : 9999 }; })
-    .sort((a, b) => (!d.ad[b.c.id]) - (!d.ad[a.c.id]) || (b.gap >= d.staleDays) - (a.gap >= d.staleDays) || b.gap - a.gap || b.age - a.age);
-  const st = x => x.gap === 9999 ? `<span class="pill stale">${self ? '我還沒曝光' : '尚未曝光'}</span>` : x.gap >= d.staleDays ? `<span class="pill active">${x.gap} 天沒更新</span>` : '<span class="pill ready">曝光中</span>';
+    const must = status(c) === '在庫' && diffD(c.inDate, wkE) >= RULE.oldDays && !all, wk = e.some(l => l['日期'] >= wkS && l['日期'] <= wkE);
+    return { c, age: stockDays(c), v: cnt(e, '拍影片上傳'), p: cnt(e, '發貼文'), last: e[0], gap: e[0] ? diffD(e[0]['日期'], D.today) : 9999, must, need: must && !wk }; })
+    .sort((a, b) => b.need - a.need || (!d.ad[b.c.id]) - (!d.ad[a.c.id]) || (b.gap >= d.staleDays) - (a.gap >= d.staleDays) || b.gap - a.gap || b.age - a.age);
+  const needs = cars.filter(x => x.need), musts = cars.filter(x => x.must);
+  const st = x => x.need ? '<span class="pill" style="background:var(--warn);color:#fff">⚠ 90 天車・本週還沒曝光</span>' : x.must ? '<span class="pill ready">90 天車・本週已曝光 ✓</span>' : x.gap === 9999 ? `<span class="pill stale">${self ? '我還沒曝光' : '尚未曝光'}</span>` : x.gap >= d.staleDays ? `<span class="pill active">${x.gap} 天沒更新</span>` : '<span class="pill ready">曝光中</span>';
   const byDay = {}; mlogs.forEach(l => (byDay[l['日期']] = byDay[l['日期']] || []).push(l));
+  const x = logDraft(), dft = hasLogDraft();
   const types = d.types; if (!types.includes(logType)) logType = types[0];
   const needCar = ['拍影片上傳', '發貼文', '上8891廣告', '整備協助'].includes(logType), needLink = ['拍影片上傳', '發貼文', '上8891廣告'].includes(logType);
   const hit = s => prepCars().filter(c => { const w = String(s['車款']).split(/\s+/).pop(); return w && (c.brand + ' ' + c.model).toUpperCase().includes(w); }).length;
@@ -975,6 +1002,10 @@ function renderDash() {
   <section class="row" style="justify-content:space-between"><div><h2 style="font-size:18px">${self ? '我的儀表板' : '業務儀表板'}</h2><div class="small muted">${self ? '記下每天做的事，月底一目了然' : '看每位業務這個月的活動力'}</div></div>
     <div class="row">${boss ? `<select id="dws" aria-label="人員"><option value="">全部人員</option>${d.people.map(p => `<option value="${esc(p)}" ${p === who ? 'selected' : ''}>${esc(pname(p))}</option>`).join('')}</select>` : ''}
       <select id="dwm" aria-label="月份">${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m.slice(0, 4)} 年 ${+m.slice(5)} 月</option>`).join('')}</select></div></section>
+  ${musts.length ? needs.length ? `<section class="panel sec" style="border:2px solid var(--warn);background:var(--warn-soft)"><b style="color:var(--warn);font-size:16px">⚠ 本週（${md(wkS)}～${md(wkE)}）還有 ${needs.length} 台 90 天以上的車${self ? '你' : ' ' + esc(who) + ' '}還沒曝光</b>
+    <div class="small">${needs.map(x => `<b>${esc(label(x.c))}</b> <span class="mono">${esc(x.c.plate)}</span>（${x.age} 天）`).join('、')}</div>
+    <div class="small muted">公司規定：90 天以上的車，每位業務每週每台至少曝光一次（拍影片或發貼文），新增工作紀錄時選這台車就算。每週一重新計算。</div></section>`
+    : `<section class="panel small" style="border-color:var(--ok);color:var(--ok);font-weight:700">✓ 本週 90 天以上的車（${musts.length} 台）都曝光了</section>` : ''}
   <div class="kpis6">
     ${kc('follow', '客戶追蹤', fol, '客戶服務＋工作紀錄')}
     ${kc('seek', '尋車客人', seeks.filter(x => x['狀態'] === '尋找中').length, '尋找中')}
@@ -989,17 +1020,20 @@ function renderDash() {
     const max = Math.max(1, ...rows.map(r => r.v + r.t));
     return `<section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">${+month.slice(5)} 月發在哪些平台</h3><span class="small muted">一支影片發多個平台，各平台都會算一次</span></div>
       <div>${rows.map(r => `<div class="row" style="gap:10px;padding:4px 0;flex-wrap:nowrap"><b class="small" style="width:70px;flex:none">${r.p}</b><div style="flex:1;min-width:0"><div class="pbar" style="height:10px"><i style="width:${(r.v + r.t) / max * 100}%"></i></div></div><span class="small mono" style="width:110px;flex:none;text-align:right">影片 ${r.v}・貼文 ${r.t}</span></div>`).join('') || '<p class="small muted" style="margin:0">還沒有平台紀錄</p>'}</div></section>`; })()}
+  ${all && RULE_VIEWERS.includes(D.me.name) ? weeklyBoard() : ''}
   ${boss && all ? `<section class="panel"><h3 style="font-size:16px;margin-bottom:6px">${+month.slice(5)} 月活動力（業務＋行政）<span class="small muted" style="font-weight:400">・點數字看明細</span></h3><div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>人員</th><th>客戶追蹤</th><th>尋車客人</th><th>找車源</th><th>影片</th><th>貼文</th><th>工作紀錄</th><th>紀錄天數</th></tr></thead><tbody>
     ${d.people.map(p => { const L = d.logs.filter(l => l['業務'] === p && l['日期'].startsWith(month)); return `<tr><td><b>${esc(pname(p))}</b></td><td>${cn('follow', p, folCount([p], month))}</td><td>${cn('seek', p, d.seeks.filter(x => x['業務'] === p && x['狀態'] === '尋找中').length)}</td><td>${cn('source', p, d.sources.filter(x => x['業務'] === p && x['狀態'] === '追蹤中').length)}</td>
       <td>${cn('video', p, cnt(L, '拍影片上傳'))}</td><td>${cn('post', p, cnt(L, '發貼文'))}</td><td>${cn('logs', p, L.length)}</td><td class="mono">${new Set(L.map(l => l['日期'])).size}</td></tr>`; }).join('')}</tbody></table></div></section>` : ''}
   ${d.canLog ? `<form class="panel sec" id="lf"><h3 style="font-size:16px">新增工作紀錄</h3>
     <div class="row" style="gap:6px">${types.map(t => `<label class="chip" style="cursor:pointer"><input type="radio" name="lt" value="${t}" ${t === logType ? 'checked' : ''} style="margin:0 4px 0 0">${t}</label>`).join('')}</div>
-    <div class="row"><input type="date" id="ld" value="${isoIn(D.today)}" aria-label="日期">
-      ${needCar ? `<select id="lc" style="flex:1;min-width:200px" aria-label="車輛"><option value="">選擇車源表的車輛</option>${prepCars().slice().sort((a, b) => a.inDate.localeCompare(b.inDate)).map(c => `<option value="${c.id}">${esc(label(c))} ${esc(c.brand)}（${esc(c.plate)}）</option>`).join('')}</select>` : ''}</div>
-    ${needLink ? `<input type="text" id="ll" placeholder="${logType === '上8891廣告' ? '貼上 8891 刊登網址（選填）' : '貼上連結（選填，貼了會自動勾平台）'}">` : ''}
-    ${['拍影片上傳', '發貼文'].includes(logType) ? `<div class="row" style="gap:6px"><span class="small muted">發在哪裡（可複選）</span>${d.platforms.map(p => `<label class="chip" style="cursor:pointer"><input type="checkbox" name="lp" value="${p}" style="margin:0 4px 0 0">${p}</label>`).join('')}</div>` : ''}
-    <textarea id="ltx" rows="2" placeholder="${logType === '客戶追蹤' ? '例如：王大明 電話關心，約 11/10 回廠' : logType === '找車源' ? '例如：台中車商 RAV4 2020，開價 63 萬' : '內容（自由發揮）'}"></textarea>
-    <div class="row" style="justify-content:space-between"><span class="small muted">選了車輛的影片／貼文，會算進「${self || !boss ? '我' : ''}對每台車的曝光」</span><button class="btn acc" type="submit">新增紀錄</button></div></form>` : ''}
+    ${dft ? `<div class="row small" style="gap:8px;background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:6px 10px;justify-content:space-between"><b>已自動填回上次沒送出的內容</b><button type="button" class="btn" data-act="clrlog" style="padding:3px 10px">清空重寫</button></div>` : ''}
+    <div class="row"><input type="date" id="ld" value="${isoIn(dft && x.date ? x.date : D.today)}" aria-label="日期">
+      ${needCar ? `<select id="lc" style="flex:1;min-width:200px" aria-label="車輛"><option value="">選擇車輛</option>${logType !== '上8891廣告' ? `<optgroup label="不是文中店車源表的車">${CAR_TAGS.map(t => `<option value="@${t}" ${x.car === '@' + t ? 'selected' : ''}>${t}</option>`).join('')}</optgroup>` : ''}<optgroup label="文中店車源表">${prepCars().slice().sort((a, b) => a.inDate.localeCompare(b.inDate)).map(c => `<option value="${c.id}" ${x.car === c.id ? 'selected' : ''}>${esc(label(c))} ${esc(c.brand)}（${esc(c.plate)}）</option>`).join('')}</optgroup></select>` : ''}</div>
+    ${needCar && logType !== '上8891廣告' ? `<input type="text" id="lcn" value="${esc(x.carNote || '')}" placeholder="國際店的哪台車？車款或車牌，例如 2020 RAV4 ABC-1234" aria-label="國際店的車" ${x.car === '@國際店的車' ? '' : 'hidden'}>` : ''}
+    ${needLink ? `<input type="text" id="ll" value="${esc(x.link || '')}" placeholder="${logType === '上8891廣告' ? '貼上 8891 刊登網址（選填）' : '貼上連結（選填，貼了會自動勾平台）'}">` : ''}
+    ${['拍影片上傳', '發貼文'].includes(logType) ? `<div class="row" style="gap:6px"><span class="small muted">發在哪裡（可複選）</span>${d.platforms.map(p => `<label class="chip" style="cursor:pointer"><input type="checkbox" name="lp" value="${p}" ${(x.platforms || []).includes(p) ? 'checked' : ''} style="margin:0 4px 0 0">${p}</label>`).join('')}</div>` : ''}
+    <textarea id="ltx" rows="2" placeholder="${logType === '客戶追蹤' ? '例如：王大明 電話關心，約 11/10 回廠' : logType === '找車源' ? '例如：台中車商 RAV4 2020，開價 63 萬' : '內容（自由發揮）'}">${esc(x.text || '')}</textarea>
+    <div class="row" style="justify-content:space-between"><span class="small muted">選文中店車源表的車，才會算進「${self || !boss ? '我' : ''}對每台車的曝光」；國際店、粉絲頁、其他也會算進上面的影片／貼文數字。打到一半的內容會自動保存。</span><button class="btn acc" type="submit">新增紀錄</button></div></form>` : ''}
   <section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">${self ? '我對每台車的曝光' : all ? '每台車的曝光（全部）' : '每台車的曝光（' + esc(who) + '）'}</h3>
     <span class="small muted">8891 已上架 <b>${prepCars().filter(c => d.ad[c.id]).length}</b>／${prepCars().length} 台・沒上 8891、沒曝光、超過 ${d.staleDays} 天沒更新的排最前面</span></div>
     <div>${cars.map(x => `<div class="exp"><div><b>${esc(label(x.c))}</b> <span class="small muted">${esc(x.c.brand)}</span><div class="small muted mono">${esc(x.c.plate)}</div></div>
@@ -1022,6 +1056,48 @@ function renderDash() {
     <div class="log2">${Object.keys(byDay).sort().reverse().map(day => `<div class="day">${md(day)}（${'日一二三四五六'[new Date(isoIn(day)).getDay()]}）</div>${byDay[day].map(l => { const c = l['車輛編號'] && carById(l['車輛編號']);
       return `<div class="it row" style="gap:6px;justify-content:space-between;flex-wrap:nowrap"><div style="min-width:0"><span class="pill ${['拍影片上傳', '發貼文', '上8891廣告'].includes(l['類型']) ? 'active' : l['類型'] === '客戶追蹤' ? 'ready' : 'done'}">${esc(l['類型'])}</span>${all ? ` <b class="small">${esc(l['業務'])}</b>` : ''} ${c ? `<b>${esc(label(c))}</b> ` : l['車牌'] ? `<b class="mono">${esc(l['車牌'])}</b> ` : ''}${l['平台'] ? `<span class="small muted">［${esc(l['平台'].split(',').join('、'))}］</span> ` : ''}${esc(l['內容'])}${l['連結'] ? ` <a href="${esc(l['連結'])}" target="_blank" rel="noopener" class="small">連結</a>` : ''}</div>
       ${l['業務'] === D.me.en ? `<button class="btn" data-dellog="${l['編號']}" aria-label="刪除" style="padding:3px 8px">✕</button>` : ''}</div>`; }).join('')}`).join('') || '<p class="muted small" style="margin:0">這個月還沒有紀錄</p>'}</div></section>`;
+}
+// ===== 每週達標（主管看）：2026/11/25 公司制度 =====
+// 90 天以上在庫車：每位業務每台每週都要曝光（影片或貼文，不是管理人制）、來客每週 3 位、每週 4 支影片或 15 篇貼文（任一達標）
+// 訂車每月 4 台，已結束的月份連續 3 個月未達 → PIP
+const RULE = { oldDays: 90, visits: 3, videos: 4, posts: 15, orders: 4, pipMonths: 3 };
+const RULE_VIEWERS = ['陳建安', '吳容蓉'];   // 每週達標表只有這兩位看得到
+let wkSel = '';
+const monOf = s => addD(s, -((pd(s).getDay() + 6) % 7));                 // 那一週的星期一
+const nPlat = l => Math.max(1, String(l['平台'] || '').split(',').filter(Boolean).length);   // 一則發多個平台，每個平台算一篇
+const prevM = m => { let [y, mo] = m.split('/').map(Number); if (!--mo) { mo = 12; y--; } return y + '/' + String(mo).padStart(2, '0'); };
+function weekStats(p, ws) {
+  const we = addD(ws, 6), inW = x => x >= ws && x <= we;
+  const old = CARS.filter(c => { const o = orderOf(c); return !c.official && diffD(c.inDate, we) >= RULE.oldDays && !(o && o.date <= we); });
+  const L = DD().logs.filter(l => l['業務'] === p && inW(l['日期']));
+  const miss = old.filter(c => !L.some(l => l['車輛編號'] === c.id && ['拍影片上傳', '發貼文'].includes(l['類型'])));
+  const v = L.filter(l => l['類型'] === '拍影片上傳').reduce((a, l) => a + nPlat(l), 0), t = L.filter(l => l['類型'] === '發貼文').reduce((a, l) => a + nPlat(l), 0);
+  const vis = VISITS.filter(x => x.sales === p && inW(x.date)).length;
+  return { old, miss, v, t, vis, okOld: !miss.length, okVis: vis >= RULE.visits, okMedia: v >= RULE.videos || t >= RULE.posts };
+}
+const monthOrders = (p, m) => ORDERS.filter(o => o.seller === p && o.status !== '已退訂' && (o.date || '').startsWith(m)).length;
+function missStreak(p) {   // 從上個月往回數，連續幾個月訂車未達（系統上線前的月份不算）
+  let n = 0, m = ym(D.today);
+  for (let i = 0; i < 24; i++) { m = prevM(m); if (m < ym(START) || monthOrders(p, m) >= RULE.orders) break; n++; }
+  return n;
+}
+function weeklyBoard() {
+  const cur = monOf(D.today), weeks = [...Array(8)].map((_, i) => addD(cur, -7 * i));
+  const ws = wkSel || cur, we = addD(ws, 6), going = ws === cur, mon = ym(D.today);
+  const cell = (ok, txt, need) => ok ? `<span style="color:var(--ok);font-weight:700">✓ ${txt}</span>`
+    : `<span style="color:${going ? 'var(--accent)' : 'var(--warn)'};font-weight:700">${going ? '' : '✗ '}${txt}</span>${need ? `<div class="small muted" style="white-space:normal">${need}</div>` : ''}`;
+  const rows = SALES().map(p => { const s = weekStats(p, ws), mo = monthOrders(p, mon), st = missStreak(p), ok = s.okOld && s.okVis && s.okMedia;
+    return `<tr><td><b>${esc(p)}</b></td>
+      <td style="max-width:240px">${s.old.length ? cell(s.okOld, `${s.old.length - s.miss.length}/${s.old.length} 台`, s.miss.length ? '還沒曝光：' + s.miss.map(c => `${esc(label(c))}（${esc(c.plate)}）`).join('、') : '') : '<span class="muted">沒有 90 天車</span>'}</td>
+      <td>${cell(s.okVis, `${s.vis}/${RULE.visits} 位`, s.okVis ? '' : `還差 ${RULE.visits - s.vis} 位`)}</td>
+      <td>${cell(s.okMedia, `影片 ${s.v}/${RULE.videos}・貼文 ${s.t}/${RULE.posts}`, s.okMedia ? '' : `再 ${RULE.videos - s.v} 支影片或 ${RULE.posts - s.t} 篇貼文`)}</td>
+      <td>${ok ? '<span class="pill ready">達標</span>' : going ? '<span class="pill active">進行中</span>' : '<span class="pill stale">未達標</span>'}</td>
+      <td class="mono">${mo}/${RULE.orders} 台</td>
+      <td>${st >= RULE.pipMonths ? `<span class="pill stale">PIP・連續 ${st} 個月未達</span>` : st ? `<span style="color:var(--warn);font-weight:700">連續 ${st} 個月未達</span>` : '<span class="muted">—</span>'}</td></tr>`; }).join('');
+  return `<section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">業務每週達標 <span class="small muted" style="font-weight:400">只有 Leo、Yvonne 看得到</span></h3>
+    <select id="wks" aria-label="週">${weeks.map((w, i) => `<option value="${w}" ${w === ws ? 'selected' : ''}>${md(w)}～${md(addD(w, 6))}${i === 0 ? '（本週）' : i === 1 ? '（上週）' : ''}</option>`).join('')}</select></div>
+    <div class="tbl-wrap"><table style="min-width:820px;font-size:14px"><thead><tr><th>業務</th><th>90 天車曝光</th><th>來客</th><th>影片／貼文</th><th>本週</th><th>${+mon.slice(5)} 月訂車</th><th>訂車連續未達</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="small muted" style="margin:0">${going ? `本週還剩 ${diffD(D.today, we) + 1} 天，橘字是還沒達到。` : ''}週一到週日算一週。90 天車＝該週庫存滿 ${RULE.oldDays} 天還沒收訂的車，每位業務每台都要有自己的影片或貼文；來客＝來客紀錄的接待業務（看車、估車都算）；影片 ${RULE.videos} 支或貼文 ${RULE.posts} 篇任一達到就算，業務回報發了幾個平台就算幾篇；訂車每月 ${RULE.orders} 台，從 ${ym(START)} 起算，已結束的月份連續 ${RULE.pipMonths} 個月未達標示 PIP。</p></section>`;
 }
 let msgImage = null;
 
@@ -1055,8 +1131,7 @@ function renderCount() {
     <div><h2 style="font-size:18px">文中店 每日點車</h2><div class="small muted">值班業務下班前確認每台車是否在店</div></div>
     <div class="small">${done ? `<span class="pill ready">今日已點車</span> ${esc(done.by)}・${done.time.slice(0, 5)}` : '<span class="pill stale">今天還沒點車</span>'}</div>
   </section>
-  <section class="panel small">今日值班業務：<b>${D.duty.length ? D.duty.map(d => `${d.name}（${d.code}）`).join('、') : '沒有（漏點會提醒主管）'}</b>
-    <span class="muted">・到 ${D.closeTime} 還沒點車，系統才會用 LINE 提醒</span></section>
+  <section class="panel small">今日值班業務：<b>${D.duty.length ? D.duty.map(d => `${d.name}（${d.code}）`).join('、') : '沒有'}</b></section>
   <section class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:4px"><h3 style="font-size:16px">${md(today)} 點車・共 ${cars.length} 台</h3>
       ${can ? '<button class="btn" data-allin>全部設為在店</button>' : ''}</div>
@@ -1073,7 +1148,7 @@ function renderCount() {
           ${status(c) === '在庫' ? `<button class="btn" data-visit="${c.id}">＋來客</button>` : ''}</div>
         ${d.s === '外出' && can ? `<div class="extra"><select data-cr="${c.id}" aria-label="外出原因">${D.outReasons.map(r => `<option ${d.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
           <input type="text" data-cn="${c.id}" value="${esc(d.note || '')}" placeholder="地點／預計回店（選填）" style="flex:1;min-width:150px" aria-label="外出備註"></div>` : ''}
-        ${d.s === '找不到' ? '<div class="extra small" style="color:var(--warn)">送出後會立即通知主管</div>' : ''}
+        ${d.s === '找不到' ? '<div class="extra small" style="color:var(--warn)">找不到的車請另外回報主管</div>' : ''}
       </div>`;
     }).join('')}</div>
   </section>
@@ -1254,6 +1329,10 @@ function numTable(id, rows, get) {
 function bonusOf(o) {
   const c = carById(o.carId); if (!c || c.floor == null || o.price == null) return null;
   const r = calcBonus(c, o.price, !SALES().includes(o.seller));
+  // 客人沒加入業務官方 LINE：銷售獎金打 7 折（已交車看交車當下，還沒交車看目前狀態；本規則恢復前交車的單不打折）
+  const noLine = SALES().includes(o.seller) && (o.status === '已交車' ? o.dlvBound === '否' : !o.bound);
+  if (noLine && r.sale != null) r.sale = Math.round(r.sale * BONUS.noLineRate);
+  r.noLine = noLine;
   return { ...r, c, fSale: o.fSale !== '' ? +o.fSale : r.sale, fBuy: o.fBuy !== '' ? +o.fBuy : r.buy, pending: r.sale == null && o.fSale === '' && SALES().includes(o.seller) };
 }
 function renderBonus() {
@@ -1279,15 +1358,15 @@ function renderBonus() {
     <tbody>${list.map(o => { const b = bonusOf(o); if (!b) return `<tr><td colspan="15" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const c = b.c, comp = !SALES().includes(o.seller);
       return `<tr style="${b.below ? 'background:var(--warn-soft)' : ''}"><td class="mono">${md(o.delivered)}<div class="small muted">收訂 ${md(o.date)}</div></td><td><b>${esc(label(c))}</b><div class="mono small muted">${esc(c.plate)}</div></td><td>${esc(o.cust)}</td>
       <td class="mono" style="text-align:right"><input type="number" data-bp="${o.id}" value="${o.price ?? ''}" aria-label="成交價" title="主管可修改成交價" style="width:104px;text-align:right"></td><td class="mono" style="text-align:right">${money(c.floor)}</td><td class="mono" style="text-align:right;color:${b.below ? 'var(--warn)' : 'var(--ok)'}">${b.diff >= 0 ? '+' : ''}${money(b.diff)}</td>
-      <td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${comp ? '—' : inp(o, 'sale', b.sale)}</td>
+      <td>${esc(o.seller)}</td><td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}${b.noLine ? `<div class="small" style="color:var(--warn);font-weight:700">${o.status === '已交車' ? '交車時未綁LINE' : '目前未綁LINE'} ×70%</div>` : ''}</td><td>${comp ? '—' : inp(o, 'sale', b.sale)}</td>
       <td>${esc(c.buyer)}${b.buyer ? `<div class="small muted">採購 ${money(c.cost) || '未填'}</div>` : ''}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">低於底價・無</span>' : money(b.buy)}</td><td>${b.buyer && !b.below ? inp(o, 'buy', b.buy) : '—'}</td>
       ${(() => { const p = prof(o); return `<td class="mono" style="text-align:right">${c.totalCost == null ? '<span class="need">未填</span>' : money(c.totalCost)}</td><td class="mono" style="text-align:right">${p ? money(p.g) : '—'}</td><td class="mono" style="text-align:right;font-weight:700;color:${p && p.n < 0 ? 'var(--warn)' : 'inherit'}">${p ? money(p.n) : '—'}</td>`; })()}</tr>`; }).join('') || '<tr><td colspan="15" class="muted">這個月沒有交車</td></tr>'}</tbody></table></div></section>
   <section class="panel sec"><h3 style="font-size:16px">已收訂、還沒交車（交車後列入）</h3>
     <div class="tbl-wrap"><table style="min-width:720px;font-size:13.5px"><thead><tr><th>收訂日</th><th>車輛</th><th>銷售</th><th style="text-align:right">成交價／底價</th><th style="text-align:right">銷售試算</th><th>採購人</th><th style="text-align:right">採購試算</th><th>預計交車</th></tr></thead>
     <tbody>${waiting.map(o => { const b = bonusOf(o); const c = carById(o.carId); if (!b) return `<tr><td colspan="8" class="muted">${esc(o.label)}：缺少成交價或底價</td></tr>`; const comp = !SALES().includes(o.seller);
       return `<tr><td class="mono">${md(o.date)}</td><td><b>${esc(label(c))}</b> <span class="mono small muted">${esc(c.plate)}</span></td><td>${esc(o.seller)}</td><td class="mono" style="text-align:right;white-space:nowrap"><input type="number" data-bp="${o.id}" value="${o.price ?? ''}" aria-label="成交價" title="主管可修改成交價" style="width:104px;text-align:right"> / ${money(c.floor)}</td>
-      <td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}</td><td>${esc(c.buyer)}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">無</span>' : money(b.buy)}</td><td class="mono">${o.eta ? md(o.eta) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">沒有</td></tr>'}</tbody></table></div></section>
-  <p class="small muted" style="margin:0">銷售獎金＝保底獎金＋（成交價−底價）×30%，低於底價由主管斟酌；公司車（管理員收訂）沒有銷售獎金。採購獎金只算業務採購的車：採購金額 50 萬以下保底 1,000、以上 3,000，再加（成交價−底價）×20%；低於底價沒有採購獎金。核定欄改過的以核定為準。成交價欄可以直接修改（業務填錯時更正），改完獎金試算會重算。</p>`;
+      <td class="mono" style="text-align:right">${comp ? '—' : b.sale == null ? '<span class="need">低於底價</span>' : money(b.sale)}${b.noLine ? `<div class="small" style="color:var(--warn);font-weight:700">${o.status === '已交車' ? '交車時未綁LINE' : '目前未綁LINE'} ×70%</div>` : ''}</td><td>${esc(c.buyer)}</td><td class="mono" style="text-align:right">${!b.buyer ? '—' : b.below ? '<span class="need">無</span>' : money(b.buy)}</td><td class="mono">${o.eta ? md(o.eta) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">沒有</td></tr>'}</tbody></table></div></section>
+  <p class="small muted" style="margin:0">銷售獎金＝保底獎金＋（成交價−底價）×30%，低於底價由主管斟酌；公司車（管理員收訂）沒有銷售獎金。採購獎金只算業務採購的車：採購金額 50 萬以下保底 1,000、以上 3,000，再加（成交價−底價）×20%；低於底價沒有採購獎金。交車時客人未綁定 LINE 的單，銷售獎金試算已打 7 折（以完成交車當下為準）；還沒交車的單依目前綁定狀態預估。核定欄改過的以核定為準。成交價欄可以直接修改（業務填錯時更正），改完獎金試算會重算。</p>`;
 }
 
 // ===== 第四階段：車籍資料（合約系統會自動帶入）=====
@@ -1372,12 +1451,13 @@ document.addEventListener('click', async e => {
   if (ds.pf !== undefined) { prepFilter = ds.pf; page = 'prepm'; render(); return; }
   if (ds.pmgr !== undefined) { prepMgr = ds.pmgr === '__all' || ds.pmgr === prepMgr ? null : ds.pmgr; render(); return; }
   if (ds.swap) { const [a, b] = ds.swap.split('|'); await act({ action: 'swapPaint', a, b }, t); return; }
+  if (ds.act === 'clrlog') { if (confirm('清空這筆還沒送出的工作紀錄？')) { clearLogDraft(); render(); } return; }
   if (ds.dellog) { if (confirm('刪除這筆工作紀錄？')) await act({ action: 'delLog', id: ds.dellog }, t); return; }
   if (ds.act === 'seekadd') { openModal(`<h3>登記尋車客人</h3><form class="form2" id="skf"><label>客人<input type="text" id="sk1" placeholder="李先生" required></label><label>想找的車<input type="text" id="sk2" placeholder="TOYOTA RAV4" required></label>
     <label>年份<input type="text" id="sk3" placeholder="2019 以後"></label><label>預算<input type="text" id="sk4" placeholder="60 萬內"></label><label class="full">備註<input type="text" id="sk5" placeholder="例如 要白色、電話 0912…"></label>
-    <p class="full small muted" style="margin:0">車源表有車型相符的車，會顯示「可能符合」</p><div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">登記</button></div></form>`); return; }
+    <p class="full small muted" style="margin:0">車源表有車型相符的車，會顯示「可能符合」</p><div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">登記</button></div></form>`); fillFormDraft('skf'); return; }
   if (ds.act === 'srcadd') { openModal(`<h3>登記找車源</h3><form class="form2" id="srf"><label class="full">車款<input type="text" id="sr1" placeholder="2020 TOYOTA RAV4" required></label><label>來源<input type="text" id="sr2" placeholder="車商、個人、拍賣場"></label><label>開價<input type="text" id="sr3" placeholder="63 萬"></label>
-    <label class="full">備註<input type="text" id="sr4" placeholder="例如 里程 5 萬、一手車，下週看車"></label><div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">登記</button></div></form>`); return; }
+    <label class="full">備註<input type="text" id="sr4" placeholder="例如 里程 5 萬、一手車，下週看車"></label><div class="full row" style="justify-content:flex-end"><button type="button" class="btn" data-mclose>取消</button><button class="btn acc" type="submit">登記</button></div></form>`); fillFormDraft('srf'); return; }
   if (ds.cust) { selCust = ds.cust; svTab = 'list'; notePhotos = []; render(); window.scrollTo(0, 0); return; }
   if (ds.pick !== undefined) { selCust = ds.pick || null; notePhotos = []; render(); window.scrollTo(0, 0); return; }
   if (ds.renew) { await act({ action: 'renewInsurance', id: ds.renew }, t); return; }
@@ -1411,6 +1491,8 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('input', e => {
   const id = e.target.id;
+  if (e.target.closest('#lf')) { saveLogDraft(); return; }
+  const df = e.target.closest('#skf,#srf'); if (df) { saveFormDraft(df); return; }
   if (id === 'c-sq') { const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('.vcar').forEach(l => { l.hidden = !!q && !l.dataset.k.includes(q); }); return; }
   if (id === 'sq' || id === 'vq' || id === 'svq') { if (id === 'sq') stockQ = e.target.value; else if (id === 'vq') visQ = e.target.value; else svQ = e.target.value; const pos = e.target.selectionStart; render(); const s = $('#' + id); s.focus(); s.setSelectionRange(pos, pos); }
 });
@@ -1420,10 +1502,13 @@ document.addEventListener('change', async e => {
   if (id === 'bmon') { bonusMonth = t.value; render(); }
   if (id === 'svs') { svSeller = t.value; render(); }
   if (id === 'dws') { dashWho = t.value; render(); }
+  if (id === 'wks') { wkSel = t.value; render(); }
   if (id === 'll') { const u = t.value.toLowerCase(), p = /youtu/.test(u) ? 'YouTube' : /instagram/.test(u) ? 'IG' : /tiktok/.test(u) ? 'TikTok' : /threads\./.test(u) ? 'Threads' : /facebook\.com\/groups|fb\.com\/groups/.test(u) ? 'FB社團' : /facebook|fb\.(com|watch|me)/.test(u) ? 'FB粉專' : '';
     const cb = p && document.querySelector(`[name=lp][value="${p}"]`); if (cb) cb.checked = true; }
   if (id === 'dwm') { dashMonth = t.value; render(); }
-  if (t.name === 'lt') { logType = t.value; render(); }
+  if (t.name === 'lt') { logType = t.value; saveLogDraft(); render(); }
+  if (id === 'lc') { const b = $('#lcn'); if (b) { b.hidden = t.value !== '@國際店的車'; if (!b.hidden) b.focus(); } }
+  if (t.closest && t.closest('#lf')) saveLogDraft();
   if (t.dataset.pwho) { const [cid, j] = t.dataset.pwho.split('|'); await prepSave(cid, +j, { who: t.value.trim() }); }
   if (t.dataset.pdate) { const [cid, j] = t.dataset.pdate.split('|'); await prepSave(cid, +j, { date: isoOut(t.value) }); }
   if (t.dataset.pnote) { const [cid, j] = t.dataset.pnote.split('|'); await prepSave(cid, +j, { note: t.value.trim() }); }
@@ -1463,13 +1548,18 @@ document.addEventListener('submit', async e => {
     }
   }
   if (f.id === 'dcf') { const r = await act({ action: 'carDocs', id: f.dataset.id, fields: readDocs() }, btn); if (r && r.ok) pendingLic = null; }
-  if (f.id === 'lf') { const r = await act({ action: 'addLog', type: logType, date: isoOut(g('ld')), carId: g('lc'), link: g('ll'), text: g('ltx'), platforms: [...f.querySelectorAll('[name=lp]:checked')].map(x => x.value) }, btn); }
-  if (f.id === 'skf') await act({ action: 'saveSeek', cust: g('sk1'), want: g('sk2'), year: g('sk3'), budget: g('sk4'), note: g('sk5') }, btn);
-  if (f.id === 'srf') await act({ action: 'saveSource', car: g('sr1'), from: g('sr2'), price: g('sr3'), note: g('sr4') }, btn);
+  if (f.id === 'lf') { saveLogDraft(); const cv = g('lc'), tag = cv.startsWith('@') ? cv.slice(1) : '';
+    if (tag === '國際店的車' && !g('lcn')) { toast('請填國際店的哪台車（車款或車牌）'); $('#lcn').focus(); return; }
+    const r = await act({ action: 'addLog', type: logType, date: isoOut(g('ld')), carId: tag ? '' : cv, carTag: tag, carNote: tag === '國際店的車' ? g('lcn') : '', link: g('ll'), text: g('ltx'), platforms: [...f.querySelectorAll('[name=lp]:checked')].map(x => x.value) }, btn);
+    if (r && r.ok) { clearLogDraft(); render(); } }
+  if (f.id === 'skf') { const r = await act({ action: 'saveSeek', cust: g('sk1'), want: g('sk2'), year: g('sk3'), budget: g('sk4'), note: g('sk5') }, btn); if (r && r.ok) dset('skf', null); }
+  if (f.id === 'srf') { const r = await act({ action: 'saveSource', car: g('sr1'), from: g('sr2'), price: g('sr3'), note: g('sr4') }, btn); if (r && r.ok) dset('srf', null); }
   if (f.id === 'of') await act({ action: 'addOrder', carId: f.dataset.id, seller: g('o-sales'), date: isoOut(g('o-date')), customer: g('o-cust'), price: g('o-price'), eta: isoOut(g('o-eta')) }, btn);
   if (f.id === 'pf') { const note = g('pnote'); if (!note && !pendingPhotos.length) { toast('請至少寫一段說明或附一張照片'); return; }
     const r = await act({ action: 'addProgress', id: selOrder, stage: g('pstage'), note, photos: pendingPhotos, push: !!$('#ppush')?.checked }, btn);
     if (r && r.ok) { pendingPhotos = []; render(); } }
+  if (f.id === 'dlv') { const od = ORDERS.find(x => x.id === f.dataset.id);
+    if (od && SALES().includes(od.seller) && !od.bound && !confirm('客人還沒綁定 LINE，這筆銷售獎金會打 7 折。\n建議先請客人加入你的官方帳號、回覆綁定碼，再完成交車。\n\n確定現在就完成交車嗎？')) return; }
   if (f.id === 'dlv') await act({ action: 'deliver', id: f.dataset.id, date: isoOut(g('d-date')), service: { birthday: isoOut(g('d-bd')), insWithUs: $('#d-insus').checked,
     insCompany: g('d-insco'), insType: g('d-instype'), insExpire: isoOut(g('d-insexp')), coupons: readCoupons(f),
     phone: g('d-tel'), idNo: g('d-idn'), address: g('d-addr'), inspect: isoOut(g('d-insp')) } }, btn);
