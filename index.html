@@ -274,7 +274,7 @@ async function act(payload, busyBtn) {
 
 // ===== 資料 =====
 let pendingLic = null;
-let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {}, PROGRESS = [], selOrder = null, pendingPhotos = [];
+let D = null, CARS = [], ORDERS = [], VISITS = [], CHECKS = {}, PROGRESS = [], HIST = [], selOrder = null, pendingPhotos = [];
 let page = 'stock', stockFilter = '庫存中', stockQ = '', boardMonth = '', bonusMonth = '', visQ = '', histDays = 10, draft = null, pendingTrade = null;
 const isBoss = () => D && D.me.isBoss;
 const NICK = { '吳容蓉': 'Yvonne' };   // 畫面上加註的英文名（陳建安在系統裡直接叫 Leo）
@@ -305,6 +305,7 @@ function normalize() {
   D.checks.forEach(c => { (CHECKS[c['日期']] = CHECKS[c['日期']] || { by: c['點車人'], time: c['時間'], items: {} }).items[c['車輛編號']] = { s: c['狀態'], reason: c['原因'], note: c['備註'], c: c['充電'] === '是' }; });
   if (!boardMonth) boardMonth = ym(D.today);
   if (!bonusMonth) bonusMonth = ym(D.today);
+  HIST = histRows();
   draft = null;
 }
 const orderOf = c => ORDERS.find(o => o.carId === c.id && o.status !== '已退訂');
@@ -1284,40 +1285,92 @@ function renderVisits() {
 }
 
 // ===== 分點表 =====
+// 系統上線前（2026/01～10）的月份：試算表「年度基準」分頁裡，「年度」欄寫 yyyy/MM 的列＝那個月的紙本分點表
+// 收車／訂車／交車＝當月實際，說明欄放當月目標（例如「目標 收3 訂4 交4」）。有月資料的年度，就不再用整年的年度基準
+const K3 = ['buy', 'order', 'deliver'], KN = { buy: '收車', order: '訂車', deliver: '交車' };
+let rateKind = 'order';
+function histRows() {
+  return (D.base || []).filter(b => /^\d{4}\/\d{2}$/.test(b['年度'])).map(b => {
+    const t = String(b['說明'] || '').match(/收\D*(\d+)\D+訂\D*(\d+)\D+交\D*(\d+)/);
+    return { m: b['年度'], r: b['列'], a: { buy: +b['收車'] || 0, order: +b['訂車'] || 0, deliver: +b['交車'] || 0 }, t: t ? { buy: +t[1], order: +t[2], deliver: +t[3] } : null };
+  });
+}
+const histYear = y => HIST.some(h => h.m.startsWith(y + '/'));
+const isHist = m => m < ym(START) && HIST.some(h => h.m === m);
+function curTargets() { const T = {}; D.targets.forEach(t => T[t['列']] = { buy: +t['收車'] || 0, order: +t['訂車'] || 0, deliver: +t['交車'] || 0 }); return T; }
+// 某個月：要列出的人、各列實際台數、目標、車輛明細
+function monthCounts(month) {
+  const z = () => ({ buy: 0, order: 0, deliver: 0 }), M = {}, T = {}, L = {};
+  if (isHist(month)) {
+    const hs = HIST.filter(h => h.m === month && ROWS().includes(h.r)), CT = curTargets();
+    const rows = ROWS().filter(r => hs.some(h => h.r === r));
+    rows.forEach(r => { const h = hs.find(x => x.r === r); M[r] = h.a; T[r] = h.t || CT[r] || z(); L[r] = { buy: [], order: [], deliver: [] }; });
+    return { rows, M, T, L, hist: true };
+  }
+  const CT = curTargets(), rows = ROWS();
+  rows.forEach(r => { M[r] = z(); T[r] = CT[r] || z(); L[r] = { buy: [], order: [], deliver: [] }; });
+  if (month >= ym(START)) {
+    const tag = c => `${String(c.year).slice(0, 4)}_${c.model}_${c.color}`;
+    CARS.filter(c => !c.official && c.inDate >= START && ym(c.inDate) === month).forEach(c => { const r = rowOf(c.buyer); if (M[r]) { M[r].buy++; L[r].buy.push(tag(c)); } });
+    ORDERS.filter(o => o.status !== '已退訂').forEach(o => { const r = rowOf(o.seller), c = carById(o.carId); if (!M[r] || !c) return;
+      if (o.date >= START && ym(o.date) === month) { M[r].order++; L[r].order.push(tag(c)); }
+      if (o.delivered && o.delivered >= START && ym(o.delivered) === month) { M[r].deliver++; L[r].deliver.push(tag(c)); } });
+  }
+  return { rows, M, T, L, hist: false };
+}
+const monthsOfYear = (y, upTo) => [...Array(12)].map((_, i) => y + '/' + String(i + 1).padStart(2, '0')).filter(m => m <= upTo);
+// 年度＝當年 1 月到選的這個月累計（跟紙本分點表一樣）
 function boardData(month) {
-  const year = month.slice(0, 4), z = () => ({ buy: 0, order: 0, deliver: 0 }), M = {}, Y = {}, L = {};
-  ROWS().forEach(r => { M[r] = z(); Y[r] = z(); L[r] = { buy: [], order: [], deliver: [] }; });
-  D.base.filter(b => b['年度'] === year).forEach(b => { const r = b['列']; if (Y[r]) { Y[r].buy += +b['收車'] || 0; Y[r].order += +b['訂車'] || 0; Y[r].deliver += +b['交車'] || 0; } });
-  const tag = c => `${String(c.year).slice(0, 4)}_${c.model}_${c.color}`;
-  CARS.filter(c => !c.official && c.inDate >= START).forEach(c => { const r = rowOf(c.buyer); if (!M[r]) return; if (ym(c.inDate) === month) { M[r].buy++; L[r].buy.push(tag(c)); } if (c.inDate.slice(0, 4) === year) Y[r].buy++; });
-  ORDERS.filter(o => o.status !== '已退訂').forEach(o => { const r = rowOf(o.seller), c = carById(o.carId); if (!M[r] || !c) return;
-    if (o.date >= START) { if (ym(o.date) === month) { M[r].order++; L[r].order.push(tag(c)); } if (o.date.slice(0, 4) === year) Y[r].order++; }
-    if (o.delivered && o.delivered >= START) { if (ym(o.delivered) === month) { M[r].deliver++; L[r].deliver.push(tag(c)); } if (o.delivered.slice(0, 4) === year) Y[r].deliver++; } });
-  return { M, Y, L };
+  const year = month.slice(0, 4), cur = monthCounts(month), Y = {};
+  ROWS().forEach(r => Y[r] = { buy: 0, order: 0, deliver: 0 });
+  if (!histYear(year)) D.base.filter(b => b['年度'] === year).forEach(b => { const r = b['列']; if (Y[r]) { Y[r].buy += +b['收車'] || 0; Y[r].order += +b['訂車'] || 0; Y[r].deliver += +b['交車'] || 0; } });
+  monthsOfYear(year, month).forEach(m => { const c = monthCounts(m); c.rows.forEach(r => K3.forEach(k => Y[r][k] += c.M[r][k])); });
+  return Object.assign(cur, { Y });
+}
+// 業務每月達標紀錄（看一項：收車／訂車／交車）
+function rateBoard(year) {
+  const now = ym(D.today), k = rateKind;
+  const months = monthsOfYear(year, now).filter(m => isHist(m) || m >= ym(START));
+  if (!months.length) return '';
+  const data = {}; months.forEach(m => data[m] = monthCounts(m));
+  const rows = SALES().map(p => {
+    let hit = 0, n = 0, a = 0, t = 0;
+    const cells = months.map(m => { const c = data[m]; if (!c.rows.includes(p)) return '<td class="muted">—</td>';
+      const x = c.M[p][k], g = c.T[p][k], ok = x >= g, going = m === now;
+      if (!going) { n++; a += x; t += g; if (ok) hit++; }
+      return `<td class="mono" style="font-weight:700;color:${ok ? 'var(--ok)' : going ? 'var(--accent)' : 'var(--warn)'}">${x}/${g}${going ? '<div class="small" style="font-weight:400">進行中</div>' : ''}</td>`; }).join('');
+    return `<tr><td><b>${esc(p)}</b></td>${cells}<td class="mono"><b>${hit}</b>/${n} 個月</td><td class="mono">${a}/${t} 台・<b>${t ? Math.round(a / t * 100) : 0}%</b></td></tr>`; }).join('');
+  return `<section class="panel sec"><div class="row" style="justify-content:space-between"><h3 style="font-size:16px">${year} 業務達標紀錄</h3>
+    <div class="filters">${K3.map(x => `<button class="chip" data-rk="${x}" aria-pressed="${x === k}">${KN[x]}</button>`).join('')}</div></div>
+    <div class="tbl-wrap"><table style="min-width:${260 + months.length * 62}px;font-size:13.5px;text-align:center"><thead><tr><th>業務</th>${months.map(m => `<th style="text-align:center">${+m.slice(5)} 月</th>`).join('')}<th>達標月數</th><th>累計（實際/目標）</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="small muted" style="margin:0">每格是「實際/目標」，綠字達標、紅字未達；目標照當月分點表（試用期的目標比較低）。「—」是那個月還沒到職。這個月還沒結束，不算進達標月數和累計。</p></section>`;
 }
 function renderBoard() {
-  const { M, Y, L } = boardData(boardMonth);
-  const T = {}; D.targets.forEach(t => T[t['列']] = { buy: +t['收車'] || 0, order: +t['訂車'] || 0, deliver: +t['交車'] || 0 });
+  const { rows, M, T, L, Y, hist } = boardData(boardMonth);
   const tg = (r, k) => (T[r] || {})[k] ?? 0;
-  const sum = (o, k) => ROWS().reduce((a, r) => a + o[r][k], 0), tsum = k => ROWS().reduce((a, r) => a + tg(r, k), 0);
+  const sum = (o, k) => rows.reduce((a, r) => a + o[r][k], 0), tsum = k => rows.reduce((a, r) => a + tg(r, k), 0);
   const cell = (r, k) => { const a = M[r][k], t = tg(r, k); return `<td class="tgt">${t}</td><td class="act ${a === 0 ? 'zero' : a >= t ? 'hit' : ''}">${a}</td><td class="yr">${Y[r][k]}</td>`; };
-  const lst = k => ROWS().map(r => `<div class="who-h">${r}</div>${L[r][k].map(c => `<div class="car">${esc(c)}</div>`).join('')}`).join('');
+  const lst = k => rows.map(r => `<div class="who-h">${r}</div>${L[r][k].map(c => `<div class="car">${esc(c)}</div>`).join('')}`).join('');
+  const months = [...new Set([...monthsList([...CARS.map(c => c.inDate), ...ORDERS.map(o => o.date), ...ORDERS.map(o => o.delivered)]), ...HIST.map(h => h.m)])].sort().reverse();
+  const year = boardMonth.slice(0, 4);
   return `
   <section class="row" style="justify-content:space-between">
-    <div><h2 style="font-size:18px">頂好汽車｜文中店 分點表</h2><div class="small muted">自動統計，所有員工都看得到</div></div>
-    <div class="row"><select id="bm" aria-label="月份">${monthsList([...CARS.map(c => c.inDate), ...ORDERS.map(o => o.date), ...ORDERS.map(o => o.delivered)]).map(m => `<option value="${m}" ${m === boardMonth ? 'selected' : ''}>${m}</option>`).join('')}</select>
-    ${isBoss() ? '<button class="btn" data-act="targets">調整目標</button><button class="btn" data-act="base">年度基準</button>' : ''}</div>
+    <div><h2 style="font-size:18px">頂好汽車｜文中店 分點表</h2><div class="small muted">${hist ? '這個月是系統上線前的紙本分點表紀錄' : '自動統計，所有員工都看得到'}</div></div>
+    <div class="row"><select id="bm" aria-label="月份">${months.map(m => `<option value="${m}" ${m === boardMonth ? 'selected' : ''}>${m}</option>`).join('')}</select>
+    ${isBoss() ? `<button class="btn" data-act="targets">調整目標</button>${histYear(year) ? '' : '<button class="btn" data-act="base">年度基準</button>'}` : ''}</div>
   </section>
   <section class="panel board" style="padding:0"><div class="tbl-wrap"><table>
     <thead><tr><th rowspan="2" style="text-align:left">${boardMonth}</th><th colspan="3" class="g1">收車（採購）</th><th colspan="3" class="g2">訂車</th><th colspan="3" class="g3">交車</th></tr>
     <tr><th class="g1">目標</th><th class="g1">當月</th><th class="g1">年度</th><th class="g2">目標</th><th class="g2">當月</th><th class="g2">年度</th><th class="g3">目標</th><th class="g3">當月</th><th class="g3">年度</th></tr></thead>
-    <tbody>${ROWS().map(r => `<tr><td class="name">${r}</td>${cell(r, 'buy')}${cell(r, 'order')}${cell(r, 'deliver')}</tr>`).join('')}
-    <tr class="total"><td class="name">TOTAL</td>${['buy', 'order', 'deliver'].map(k => `<td class="tgt">${tsum(k)}</td><td class="act">${sum(M, k)}</td><td class="yr">${sum(Y, k)}</td>`).join('')}</tr></tbody>
+    <tbody>${rows.map(r => `<tr><td class="name">${r}</td>${cell(r, 'buy')}${cell(r, 'order')}${cell(r, 'deliver')}</tr>`).join('')}
+    <tr class="total"><td class="name">TOTAL</td>${K3.map(k => `<td class="tgt">${tsum(k)}</td><td class="act">${sum(M, k)}</td><td class="yr">${sum(Y, k)}</td>`).join('')}</tr></tbody>
   </table></div></section>
-  <section class="lists"><div class="panel"><h4>當月收車</h4>${lst('buy')}</div><div class="panel"><h4>當月訂車</h4>${lst('order')}</div><div class="panel"><h4>當月交車</h4>${lst('deliver')}</div></section>
+  ${hist ? '<div class="panel small muted">系統上線前的月份只有匯入台數，沒有每台車的明細。</div>'
+    : `<section class="lists"><div class="panel"><h4>當月收車</h4>${lst('buy')}</div><div class="panel"><h4>當月訂車</h4>${lst('order')}</div><div class="panel"><h4>當月交車</h4>${lst('deliver')}</div></section>`}
+  ${rateBoard(year)}
   <section class="panel sec"><h3 style="font-size:16px">最近的 LINE 推播</h3>
     ${D.pushes.map(p => `<div class="push"><span class="ic">LINE</span><div><b>${esc(p['內容']).replace(/\n/g, '<br>')}</b><div class="small muted">${esc(p['時間'])}・${esc(p['對象'])}${p['結果'] === '成功' ? '' : '・<span style="color:var(--warn)">傳送失敗</span>'}</div></div></div>`).join('') || '<span class="muted small">還沒有推播</span>'}</section>
-  <p class="small muted" style="margin:0">年度數字＝上線前累計（試算表「年度基準」）＋ ${START} 之後系統裡的紀錄。</p>`;
+  <p class="small muted" style="margin:0">年度＝當年 1 月累計到選的月份。${histYear(year) ? `${ym(START)} 以前是匯入的紙本分點表，之後是系統紀錄。` : `年度數字＝上線前累計（試算表「年度基準」）＋ ${START} 之後系統裡的紀錄。`}</p>`;
 }
 function numTable(id, rows, get) {
   return `<form id="${id}"><div class="tbl-wrap"><table style="min-width:0"><thead><tr><th></th><th>收車</th><th>訂車</th><th>交車</th></tr></thead>
@@ -1435,6 +1488,7 @@ document.addEventListener('click', async e => {
   if (ds.contract) { location.href = CONTRACT_URL + (CONTRACT_URL.includes('?') ? '&' : '?') + 'car=' + encodeURIComponent(ds.contract); return; }
   if (ds.page) { page = ds.page; render(); window.scrollTo(0, 0); return; }
   if (ds.sf) { stockFilter = ds.sf; render(); return; }
+  if (ds.rk) { rateKind = ds.rk; render(); return; }
   if (ds.act === 'buy') { pendingLic = null; openModal(carForm(null)); return; }
   if (ds.act === 'targets') { const T = {}; D.targets.forEach(x => T[x['列']] = x); openModal('<h3>調整每月目標</h3>' + numTable('tf', ROWS(), (r, k) => (T[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
   if (ds.act === 'base') { const y = boardMonth.slice(0, 4), B = {}; D.base.filter(b => b['年度'] === y).forEach(b => B[b['列']] = b); openModal(`<h3>${y} 年度基準（上線前累計）</h3><p class="small muted" style="margin:0">系統上線（${START}）之前的年度累計數字，會加進分點表的「年度」欄。</p>` + numTable('basef', ROWS(), (r, k) => (B[r] || {})[{ buy: '收車', order: '訂車', deliver: '交車' }[k]] || 0)); return; }
